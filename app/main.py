@@ -85,10 +85,12 @@ async def on_shutdown():
 async def root():
     return {"ok": True, "service": "telegram-backup-bot"}
 
+from fastapi import FastAPI, Request
 
-@app.post("/telegram/webhook")
-async def telegram_webhook(request: Request):
+app = FastAPI()
+
+@app.post("/webhook")
+async def webhook(request: Request):
     data = await request.json()
-    update = Update.de_json(data, telegram_app.bot)
-    await telegram_app.process_update(update)
-    return JSONResponse({"ok": True})
+    print("UPDATE TELEGRAM:", data, flush=True)
+    return {"ok": True}
