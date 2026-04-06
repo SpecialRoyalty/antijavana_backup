@@ -85,9 +85,11 @@ async def on_shutdown():
 async def root():
     return {"ok": True, "service": "telegram-backup-bot"}
 
-from fastapi import FastAPI, Request
 
-app = FastAPI()
+
+@app.get("/")
+async def root():
+    return {"status": "ok"}
 
 @app.post("/webhook")
 async def webhook(request: Request):
