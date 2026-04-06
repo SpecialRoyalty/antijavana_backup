@@ -1,17 +1,47 @@
-from fastapi import FastAPI, Request
 import os
-import requests
+import asyncio
+from telethon import TelegramClient, events
 
-app = FastAPI()
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+SOURCE_CHAT_ID = int(os.getenv("SOURCE_CHAT_ID"))
+BACKUP_CHAT_ID = int(os.getenv("BACKUP_CHAT_ID"))
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+client = TelegramClient("session", API_ID, API_HASH)
 
-@app.get("/")
-def home():
-    return {"status": "bot running"}
+@client.on(events.NewMessage(chats=SOURCE_CHAT_ID))
+async def handler(event):
+    msg = event.message
 
-@app.post("/webhook")
-async def webhook(req: Request):
-    data = await req.json()
-    print(data)
-    return {"ok": True}
+    if not (msg.video or msg.document):
+        return
+
+    print("📥 Média détecté")
+
+    file_path = await msg.download_media(file="/tmp/")
+    print(f"⬇️ Téléchargé: {file_path}")
+
+    caption = msg.text or ""
+
+    await client.send_file(
+        BACKUP_CHAT_ID,
+        file_path,
+        caption=caption,
+        supports_streaming=True
+    )
+    print("📤 Envoyé dans le backup")
+
+    try:
+        os.remove(file_path)
+    except Exception as e:
+        print(f"⚠️ Suppression impossible: {e}")
+
+async def main():
+    await client.start()
+    print("✅ Userbot connecté")
+    print(f"📡 Source: {SOURCE_CHAT_ID}")
+    print(f"📦 Backup: {BACKUP_CHAT_ID}")
+    await client.run_until_disconnected()
+
+if __name__ == "__main__":
+    asyncio.run(main())
