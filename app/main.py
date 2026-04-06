@@ -55,3 +55,8 @@ async def webhook(request: Request):
         print("ERREUR:", str(e), flush=True)
 
     return {"ok": True}
+    
+    if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
