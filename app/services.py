@@ -1,10 +1,9 @@
 from datetime import datetime
-from sqlalchemy import func
+from sqlalchemy.orm import Session
 from .models import BotConfig, KnownChat, MediaItem, Admin
-from .telegram_api import copy_message
 
 
-def ensure_single_config(db):
+def ensure_single_config(db: Session) -> BotConfig:
     config = db.query(BotConfig).first()
     if not config:
         config = BotConfig()
@@ -14,154 +13,170 @@ def ensure_single_config(db):
     return config
 
 
-def upsert_known_chat(db, chat_id: int, title: str | None, chat_type: str | None):
-    item = db.query(KnownChat).filter(KnownChat.chat_id == chat_id).first()
-    if not item:
-        item = KnownChat(chat_id=chat_id, title=title, chat_type=chat_type)
-        db.add(item)
+def ensure_admin(db: Session, user_id: int, username: str | None = None) -> Admin:
+    admin = db.query(Admin).filter(Admin.user_id == user_id).first()
+    if not admin:
+        admin = Admin(user_id=user_id, username=username, is_active=True)
+        db.add(admin)
+        db.commit()
+        db.refresh(admin)
+    return admin
+
+
+def is_admin(db: Session, user_id: int) -> bool:
+    admin = db.query(Admin).filter(Admin.user_id == user_id, Admin.is_active == True).first()
+    return admin is not None
+
+
+def upsert_known_chat(db: Session, chat_id: int, title: str | None, chat_type: str | None) -> KnownChat:
+    chat = db.query(KnownChat).filter(KnownChat.chat_id == chat_id).first()
+
+    if not chat:
+        chat = KnownChat(
+            chat_id=chat_id,
+            title=title,
+            chat_type=chat_type,
+            last_seen_at=datetime.utcnow(),
+        )
+        db.add(chat)
     else:
-        item.title = title
-        item.chat_type = chat_type
-        item.last_seen_at = datetime.utcnow()
+        chat.title = title
+        chat.chat_type = chat_type
+        chat.last_seen_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(chat)
+    return chat
+
+
+def get_known_group_chats(db: Session):
+    return (
+        db.query(KnownChat)
+        .filter(KnownChat.chat_type.in_(["group", "supergroup"]))
+        .order_by(KnownChat.title.asc())
+        .all()
+    )
+
+
+def get_chat_by_id(db: Session, chat_id: int):
+    return db.query(KnownChat).filter(KnownChat.chat_id == chat_id).first()
+
+
+def set_source_chat(db: Session, chat_id: int, title: str):
+    config = ensure_single_config(db)
+    config.source_chat_id = chat_id
+    config.source_chat_title = title
+    db.commit()
+    db.refresh(config)
+    return config
+
+
+def set_backup_chat(db: Session, chat_id: int, title: str):
+    config = ensure_single_config(db)
+    config.backup_chat_id = chat_id
+    config.backup_chat_title = title
+    db.commit()
+    db.refresh(config)
+    return config
+
+
+def set_restore_chat(db: Session, chat_id: int, title: str):
+    config = ensure_single_config(db)
+    config.restore_chat_id = chat_id
+    config.restore_chat_title = title
+    db.commit()
+    db.refresh(config)
+    return config
+
+
+def set_last_seen_chat(db: Session, chat_id: int | None, title: str | None):
     config = ensure_single_config(db)
     config.last_seen_chat_id = chat_id
     config.last_seen_chat_title = title
     db.commit()
-    return item
+    db.refresh(config)
+    return config
 
 
-def ensure_admins_from_env(db, admin_ids: set[int]):
-    existing = {a.user_id for a in db.query(Admin).all()}
-    changed = False
-    for admin_id in admin_ids:
-        if admin_id not in existing:
-            db.add(Admin(user_id=admin_id, username=None, is_active=1))
-            changed = True
-    if changed:
-        db.commit()
-
-
-def is_admin(db, user_id: int) -> bool:
-    row = db.query(Admin).filter(Admin.user_id == user_id, Admin.is_active == 1).first()
-    return row is not None
-
-
-def add_or_ignore_media(db, source_chat_id: int, source_message_id: int, media_type: str,
-                        file_id: str, file_unique_id: str, caption: str | None,
-                        mime_type: str | None, file_name: str | None):
+def create_media_if_not_exists(
+    db: Session,
+    source_chat_id: int,
+    source_message_id: int,
+    media_type: str,
+    file_id: str,
+    file_unique_id: str,
+    caption: str | None,
+):
     existing = db.query(MediaItem).filter(MediaItem.file_unique_id == file_unique_id).first()
     if existing:
         return existing, False
 
-    item = MediaItem(
+    media = MediaItem(
         source_chat_id=source_chat_id,
         source_message_id=source_message_id,
         media_type=media_type,
         file_id=file_id,
         file_unique_id=file_unique_id,
         caption=caption,
-        mime_type=mime_type,
-        file_name=file_name,
         status="queued",
     )
-    db.add(item)
+    db.add(media)
     db.commit()
-    db.refresh(item)
-    return item, True
+    db.refresh(media)
+    return media, True
 
 
-def stats_text(db):
+def get_stats(db: Session):
     config = ensure_single_config(db)
-    queued = db.query(func.count(MediaItem.id)).filter(MediaItem.status == "queued").scalar() or 0
-    uploaded = db.query(func.count(MediaItem.id)).filter(MediaItem.status == "uploaded").scalar() or 0
-    restored = db.query(func.count(MediaItem.id)).filter(MediaItem.status == "restored").scalar() or 0
 
-    source_name = f"{config.source_chat_title} ({config.source_chat_id})" if config.source_chat_id else "Non défini"
-    backup_name = f"{config.backup_chat_title} ({config.backup_chat_id})" if config.backup_chat_id else "Non défini"
-    restore_name = f"{config.restore_chat_title} ({config.restore_chat_id})" if config.restore_chat_id else "Non défini"
-    last_seen = f"{config.last_seen_chat_title} ({config.last_seen_chat_id})" if config.last_seen_chat_id else "Aucun"
+    queued_count = db.query(MediaItem).filter(MediaItem.status == "queued").count()
+    uploaded_count = db.query(MediaItem).filter(MediaItem.status == "uploaded").count()
+    restored_count = db.query(MediaItem).filter(MediaItem.status == "restored").count()
 
+    return {
+        "queued": queued_count,
+        "uploaded": uploaded_count,
+        "restored": restored_count,
+        "source_chat_id": config.source_chat_id,
+        "source_chat_title": config.source_chat_title,
+        "backup_chat_id": config.backup_chat_id,
+        "backup_chat_title": config.backup_chat_title,
+        "restore_chat_id": config.restore_chat_id,
+        "restore_chat_title": config.restore_chat_title,
+    }
+
+
+def get_queued_media(db: Session):
     return (
-        "📊 Statistiques du bot\n\n"
-        f"• En attente: {queued}\n"
-        f"• Déjà envoyés au backup: {uploaded}\n"
-        f"• Déjà restaurés: {restored}\n\n"
-        f"• Groupe source: {source_name}\n"
-        f"• Groupe backup: {backup_name}\n"
-        f"• Nouveau principal: {restore_name}\n"
-        f"• Dernier groupe vu: {last_seen}"
+        db.query(MediaItem)
+        .filter(MediaItem.status == "queued")
+        .order_by(MediaItem.id.asc())
+        .all()
     )
 
 
-def set_source_from_last_seen(db):
-    config = ensure_single_config(db)
-    if not config.last_seen_chat_id:
-        return False, "Aucun groupe vu récemment."
-    config.source_chat_id = config.last_seen_chat_id
-    config.source_chat_title = config.last_seen_chat_title
+def get_uploaded_media(db: Session):
+    return (
+        db.query(MediaItem)
+        .filter(MediaItem.status == "uploaded")
+        .order_by(MediaItem.id.asc())
+        .all()
+    )
+
+
+def mark_media_uploaded(db: Session, media: MediaItem, backup_message_id: int | None = None):
+    media.status = "uploaded"
+    media.backup_message_id = backup_message_id
+    media.uploaded_at = datetime.utcnow()
     db.commit()
-    return True, f"Groupe source défini: {config.source_chat_title} ({config.source_chat_id})"
+    db.refresh(media)
+    return media
 
 
-def set_backup_from_last_seen(db):
-    config = ensure_single_config(db)
-    if not config.last_seen_chat_id:
-        return False, "Aucun groupe vu récemment."
-    config.backup_chat_id = config.last_seen_chat_id
-    config.backup_chat_title = config.last_seen_chat_title
+def mark_media_restored(db: Session, media: MediaItem, restored_message_id: int | None = None):
+    media.status = "restored"
+    media.restored_message_id = restored_message_id
+    media.restored_at = datetime.utcnow()
     db.commit()
-    return True, f"Groupe backup défini: {config.backup_chat_title} ({config.backup_chat_id})"
-
-
-def set_restore_from_last_seen(db):
-    config = ensure_single_config(db)
-    if not config.last_seen_chat_id:
-        return False, "Aucun groupe vu récemment."
-    config.restore_chat_id = config.last_seen_chat_id
-    config.restore_chat_title = config.last_seen_chat_title
-    db.commit()
-    return True, f"Nouveau principal défini: {config.restore_chat_title} ({config.restore_chat_id})"
-
-
-def upload_queued_to_backup(db):
-    config = ensure_single_config(db)
-    if not config.backup_chat_id:
-        return False, "Groupe backup non défini."
-    items = db.query(MediaItem).filter(MediaItem.status == "queued").order_by(MediaItem.id.asc()).all()
-    if not items:
-        return True, "Aucun média en attente."
-    sent = 0
-    for item in items:
-        resp = copy_message(config.backup_chat_id, item.source_chat_id, item.source_message_id)
-        if resp.get("ok"):
-            item.status = "uploaded"
-            item.uploaded_at = datetime.utcnow()
-            item.backup_message_id = resp.get("result", {}).get("message_id")
-            sent += 1
-    db.commit()
-    return True, f"{sent} média(s) envoyés vers le backup."
-
-
-def restore_uploaded_to_primary(db):
-    config = ensure_single_config(db)
-    if not config.backup_chat_id:
-        return False, "Groupe backup non défini."
-    if not config.restore_chat_id:
-        return False, "Nouveau principal non défini."
-
-    items = db.query(MediaItem).filter(MediaItem.status.in_(["uploaded", "restored"])).order_by(MediaItem.id.asc()).all()
-    if not items:
-        return True, "Aucun média disponible pour restauration."
-
-    sent = 0
-    for item in items:
-        if not item.backup_message_id:
-            continue
-        resp = copy_message(config.restore_chat_id, config.backup_chat_id, item.backup_message_id)
-        if resp.get("ok"):
-            item.status = "restored"
-            item.restored_at = datetime.utcnow()
-            item.restored_message_id = resp.get("result", {}).get("message_id")
-            sent += 1
-    db.commit()
-    return True, f"{sent} média(s) restaurés vers le nouveau principal."
+    db.refresh(media)
+    return media
