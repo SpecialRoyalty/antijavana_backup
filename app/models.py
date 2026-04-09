@@ -17,6 +17,7 @@ class BotConfig(Base):
     __tablename__ = "bot_config"
 
     id = Column(Integer, primary_key=True, index=True)
+
     source_chat_id = Column(BigInteger, nullable=True)
     source_chat_title = Column(String, nullable=True)
 
@@ -29,7 +30,12 @@ class BotConfig(Base):
     last_seen_chat_id = Column(BigInteger, nullable=True)
     last_seen_chat_title = Column(String, nullable=True)
 
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False
+    )
 
 
 class KnownChat(Base):
@@ -38,7 +44,7 @@ class KnownChat(Base):
     id = Column(Integer, primary_key=True, index=True)
     chat_id = Column(BigInteger, unique=True, index=True, nullable=False)
     title = Column(String, nullable=True)
-    chat_type = Column(String, nullable=True)
+    chat_type = Column(String, nullable=True)  # private | group | supergroup | channel
     last_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -63,3 +69,19 @@ class MediaItem(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     uploaded_at = Column(DateTime, nullable=True)
     restored_at = Column(DateTime, nullable=True)
+
+
+class TransferLog(Base):
+    __tablename__ = "transfer_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    media_item_id = Column(Integer, nullable=False)
+    action = Column(String, nullable=False)  # upload | restore
+    target_chat_id = Column(BigInteger, nullable=True)
+    target_message_id = Column(BigInteger, nullable=True)
+
+    status = Column(String, nullable=False, default="success")  # success | failed
+    error_message = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
