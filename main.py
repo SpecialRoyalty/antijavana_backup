@@ -35,13 +35,24 @@ START_PHOTO_URL = "https://files.catbox.moe/8iio0w.jpg"
 AD_PHOTO_URL = "https://files.catbox.moe/j24fx2.jpg"
 SHARE_AD_PHOTO_URL = "https://files.catbox.moe/7sw1q5.jpg"
 
-START_TEXT = """Bienvenue 👋
+START_TEXT = """👋 Bienvenue
 
-Ce bot permet de demander l’accès au groupe exclusif.
+Tu souhaites rejoindre un groupe vraiment exclusif ? Tu es au bon endroit.
 
-Réponds au formulaire, puis un admin analysera ta demande.
-Merci d’envoyer uniquement du contenu autorisé, légal et consenti.
-"""
+🔐 Ici, l’entrée est sélective :
+- Chaque membre possède de véritables contenus exclusifs
+- Les contenus déjà vus ou trop partagés ne sont pas acceptés
+
+Que tu sois créateur ou acheteur régulier de contenu privé, tu rejoindras une communauté de personnes comme toi.
+
+🤖 Processus 100% automatisé  
+Réponds au formulaire, puis ta demande sera analysée automatiquement.  
+Aucun humain n’intervient : uniquement de l’IA pour garantir confidentialité, impartialité et critères objectifs.
+
+⚠️ Important  
+Seuls les profils apportant une vraie valeur seront acceptés.
+
+👇 Commence maintenant"""
 
 AD_TEXT = """🔐 Rejoins un groupe vraiment exclusif
 
