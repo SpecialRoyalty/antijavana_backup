@@ -88,12 +88,13 @@ def db():
 
 
 def init_db():
-    logger.info("Initialisation PostgreSQL")
+    logger.info("Initialisation PostgreSQL (bot tables)")
 
     with db() as con:
         with con.cursor() as cur:
+
             cur.execute("""
-            CREATE TABLE IF NOT EXISTS users (
+            CREATE TABLE IF NOT EXISTS bot_users (
                 user_id BIGINT PRIMARY KEY,
                 username TEXT,
                 status TEXT DEFAULT 'new',
@@ -107,13 +108,7 @@ def init_db():
             """)
 
             cur.execute("""
-            CREATE TABLE IF NOT EXISTS forbidden_words (
-                word TEXT PRIMARY KEY
-            );
-            """)
-
-            cur.execute("""
-            CREATE TABLE IF NOT EXISTS submissions (
+            CREATE TABLE IF NOT EXISTS bot_submissions (
                 id BIGSERIAL PRIMARY KEY,
                 user_id BIGINT,
                 file_id TEXT,
@@ -124,7 +119,7 @@ def init_db():
             """)
 
             cur.execute("""
-            CREATE TABLE IF NOT EXISTS stats (
+            CREATE TABLE IF NOT EXISTS bot_stats (
                 key TEXT PRIMARY KEY,
                 value INTEGER DEFAULT 0
             );
@@ -138,8 +133,9 @@ def init_db():
             WHERE table_schema = 'public'
             ORDER BY table_name;
             """)
+
             tables = [r["table_name"] for r in cur.fetchall()]
-            logger.info("Tables PostgreSQL créées/trouvées : %s", tables)
+            logger.info("Tables actuelles : %s", tables)
 
 
 def inc(key: str, n: int = 1):
