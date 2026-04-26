@@ -1,16 +1,13 @@
 import os
 import logging
-import sqlite3
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote_plus
 
+import psycopg
+from psycopg.rows import dict_row
 from dotenv import load_dotenv
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    ChatPermissions,
-)
+
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions
 from telegram.error import BadRequest, Forbidden, TelegramError
 from telegram.ext import (
     Application,
@@ -23,22 +20,15 @@ from telegram.ext import (
 
 load_dotenv()
 
-# =========================
-# CONFIG RAILWAY
-# =========================
-
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+MAIN_GROUP_ID = int(os.getenv("MAIN_GROUP_ID", "0"))
+
 ADMIN_IDS = {
     int(x.strip())
     for x in os.getenv("ADMIN_IDS", "").split(",")
     if x.strip().isdigit()
 }
-MAIN_GROUP_ID = int(os.getenv("MAIN_GROUP_ID", "0"))
-DB_PATH = os.getenv("DB_PATH", "/tmp/bot.db")
-
-# =========================
-# TEXTES + IMAGES
-# =========================
 
 START_PHOTO_URL = "https://ton-site.com/start.jpg"
 AD_PHOTO_URL = "https://ton-site.com/pub.jpg"
@@ -58,6 +48,7 @@ Clique sur le bouton ci-dessous pour commencer ta demande d’accès.
 """
 
 SHARE_TEXT = "Rejoins ce groupe Telegram exclusif 🔥"
+
 SHARE_PANEL_TEXT = """Aidez-nous à faire grandir le groupe 💪
 
 Partagez ce groupe à vos contacts ou dans vos groupes Telegram.
@@ -72,20 +63,12 @@ GROUP_RULES_TEXT = """Règles du groupe :
 - Être de bonne humeur
 """
 
-# =========================
-# STATUTS
-# =========================
-
 WAITING = "waiting"
 PENDING_MEDIA = "pending_media"
 UNDER_REVIEW = "under_review"
 APPROVED = "approved"
 BANNED = "banned"
 REFUSED = "refused"
-
-# =========================
-# LOGS
-# =========================
 
 logging.basicConfig(
     level=logging.INFO,
@@ -94,89 +77,114 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# =========================
-# DATABASE
-# =========================
-
-def db():
-    folder = os.path.dirname(DB_PATH)
-    if folder:
-        os.makedirs(folder, exist_ok=True)
-
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def init_db():
-    with db() as con:
-        con.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT,
-            status TEXT DEFAULT 'new',
-            lang TEXT,
-            has_content INTEGER DEFAULT 0,
-            content_type TEXT,
-            refusal_reason TEXT,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS forbidden_words (
-            word TEXT PRIMARY KEY
-        );
-
-        CREATE TABLE IF NOT EXISTS submissions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            file_id TEXT,
-            media_type TEXT,
-            status TEXT DEFAULT 'pending',
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS stats (
-            key TEXT PRIMARY KEY,
-            value INTEGER DEFAULT 0
-        );
-        """)
-
-
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+def db():
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL manquant. Ajoute PostgreSQL sur Railway.")
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+
+
+def init_db():
+    logger.info("Initialisation PostgreSQL")
+
+    with db() as con:
+        with con.cursor() as cur:
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id BIGINT PRIMARY KEY,
+                username TEXT,
+                status TEXT DEFAULT 'new',
+                lang TEXT,
+                has_content INTEGER DEFAULT 0,
+                content_type TEXT,
+                refusal_reason TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+            """)
+
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS forbidden_words (
+                word TEXT PRIMARY KEY
+            );
+            """)
+
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS submissions (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT,
+                file_id TEXT,
+                media_type TEXT,
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            );
+            """)
+
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS stats (
+                key TEXT PRIMARY KEY,
+                value INTEGER DEFAULT 0
+            );
+            """)
+
+            con.commit()
+
+            cur.execute("""
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+            ORDER BY table_name;
+            """)
+            tables = [r["table_name"] for r in cur.fetchall()]
+            logger.info("Tables PostgreSQL créées/trouvées : %s", tables)
+
+
 def inc(key: str, n: int = 1):
     with db() as con:
-        con.execute("INSERT OR IGNORE INTO stats(key, value) VALUES(?, 0)", (key,))
-        con.execute("UPDATE stats SET value = value + ? WHERE key = ?", (n, key))
+        with con.cursor() as cur:
+            cur.execute("""
+                INSERT INTO stats(key, value)
+                VALUES(%s, 0)
+                ON CONFLICT (key) DO NOTHING
+            """, (key,))
+            cur.execute("""
+                UPDATE stats
+                SET value = value + %s
+                WHERE key = %s
+            """, (n, key))
+            con.commit()
 
 
 def set_user(user_id: int, **fields):
     with db() as con:
-        con.execute("INSERT OR IGNORE INTO users(user_id) VALUES(?)", (user_id,))
-        if fields:
-            fields["updated_at"] = now_iso()
-            sql = ", ".join([f"{k}=?" for k in fields])
-            con.execute(f"UPDATE users SET {sql} WHERE user_id=?", (*fields.values(), user_id))
+        with con.cursor() as cur:
+            cur.execute("""
+                INSERT INTO users(user_id)
+                VALUES(%s)
+                ON CONFLICT (user_id) DO NOTHING
+            """, (user_id,))
+
+            if fields:
+                fields["updated_at"] = now_iso()
+                columns = ", ".join([f"{k} = %s" for k in fields])
+                values = list(fields.values()) + [user_id]
+                cur.execute(f"UPDATE users SET {columns} WHERE user_id = %s", values)
+
+            con.commit()
 
 
 def get_user(user_id: int):
     with db() as con:
-        return con.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
+        with con.cursor() as cur:
+            cur.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
+            return cur.fetchone()
 
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
-
-
-# =========================
-# SECURITE / HELPERS
-# =========================
-
-def admin_only(user_id: int) -> bool:
-    return is_admin(user_id)
 
 
 def anti_spam(context: ContextTypes.DEFAULT_TYPE, user_id: int, seconds: int = 2) -> bool:
@@ -247,10 +255,6 @@ def admin_panel():
     ])
 
 
-# =========================
-# COMMANDES
-# =========================
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     message = update.message
@@ -285,9 +289,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-
-    if not is_admin(user.id):
+    if not is_admin(update.effective_user.id):
         await update.message.reply_text("Accès refusé.")
         return
 
@@ -298,10 +300,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text("Action annulée.")
 
-
-# =========================
-# CALLBACKS ADMIN + USER
-# =========================
 
 async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -315,7 +313,7 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data.startswith("admin:"):
-        if not admin_only(user_id):
+        if not is_admin(user_id):
             await q.message.reply_text("Accès refusé.")
             return
 
@@ -324,20 +322,24 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if action == "check_config":
             lines = ["⚙️ Vérification configuration\n"]
 
-            if BOT_TOKEN:
-                lines.append("✅ BOT_TOKEN présent")
-            else:
-                lines.append("❌ BOT_TOKEN manquant")
+            lines.append("✅ BOT_TOKEN présent" if BOT_TOKEN else "❌ BOT_TOKEN manquant")
+            lines.append("✅ DATABASE_URL présent" if DATABASE_URL else "❌ DATABASE_URL manquant")
+            lines.append(f"✅ Admins configurés : {len(ADMIN_IDS)}" if ADMIN_IDS else "❌ ADMIN_IDS manquant")
+            lines.append(f"✅ MAIN_GROUP_ID présent : {MAIN_GROUP_ID}" if MAIN_GROUP_ID else "❌ MAIN_GROUP_ID manquant")
 
-            if ADMIN_IDS:
-                lines.append(f"✅ Admins configurés : {len(ADMIN_IDS)}")
-            else:
-                lines.append("❌ ADMIN_IDS manquant")
-
-            if MAIN_GROUP_ID:
-                lines.append(f"✅ MAIN_GROUP_ID présent : {MAIN_GROUP_ID}")
-            else:
-                lines.append("❌ MAIN_GROUP_ID manquant")
+            try:
+                with db() as con:
+                    with con.cursor() as cur:
+                        cur.execute("""
+                        SELECT table_name
+                        FROM information_schema.tables
+                        WHERE table_schema = 'public'
+                        ORDER BY table_name
+                        """)
+                        tables = [r["table_name"] for r in cur.fetchall()]
+                        lines.append(f"✅ Tables DB : {', '.join(tables)}")
+            except Exception as e:
+                lines.append(f"❌ Erreur DB : {e}")
 
             if MAIN_GROUP_ID:
                 try:
@@ -351,11 +353,15 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     else:
                         lines.append("❌ Bot présent mais pas admin dans le groupe principal")
 
-                    rights = getattr(bot_member, "can_delete_messages", False)
-                    if rights:
+                    if getattr(bot_member, "can_delete_messages", False):
                         lines.append("✅ Droit suppression messages OK")
                     else:
-                        lines.append("⚠️ Le bot n’a peut-être pas le droit de supprimer les messages")
+                        lines.append("⚠️ Droit suppression messages manquant")
+
+                    if getattr(bot_member, "can_invite_users", False):
+                        lines.append("✅ Droit invitation utilisateurs OK")
+                    else:
+                        lines.append("⚠️ Droit création lien/invitation possiblement manquant")
 
                 except Exception as e:
                     lines.append("❌ Impossible d’accéder au groupe principal")
@@ -363,6 +369,7 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             current_chat = q.message.chat
             lines.append("")
+
             if current_chat.id == MAIN_GROUP_ID:
                 lines.append("ℹ️ Vous êtes actuellement dans le groupe principal.")
             elif current_chat.type in ("group", "supergroup"):
@@ -396,22 +403,25 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if action == "stats":
             with db() as con:
-                users = con.execute("SELECT status, COUNT(*) c FROM users GROUP BY status").fetchall()
-                stats = con.execute("SELECT key, value FROM stats").fetchall()
-                words = con.execute("SELECT COUNT(*) c FROM forbidden_words").fetchone()["c"]
+                with con.cursor() as cur:
+                    cur.execute("SELECT status, COUNT(*) AS c FROM users GROUP BY status")
+                    users = cur.fetchall()
 
-            lines = ["📊 Statistiques\n"]
-            lines.append("Utilisateurs :")
+                    cur.execute("SELECT key, value FROM stats ORDER BY key")
+                    stats = cur.fetchall()
+
+                    cur.execute("SELECT COUNT(*) AS c FROM forbidden_words")
+                    words = cur.fetchone()["c"]
+
+            lines = ["📊 Statistiques\n", "Utilisateurs :"]
             for r in users:
                 lines.append(f"- {r['status']}: {r['c']}")
 
-            lines.append("")
-            lines.append("Actions :")
+            lines.append("\nActions :")
             for s in stats:
                 lines.append(f"- {s['key']}: {s['value']}")
 
-            lines.append("")
-            lines.append(f"Mots interdits : {words}")
+            lines.append(f"\nMots interdits : {words}")
 
             await q.message.reply_text("\n".join(lines))
             return
@@ -467,21 +477,13 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data in ("user:type_known", "user:type_ama"):
-        set_user(
-            user_id,
-            status=PENDING_MEDIA,
-            content_type=data.replace("user:type_", "")
-        )
+        set_user(user_id, status=PENDING_MEDIA, content_type=data.replace("user:type_", ""))
         await q.edit_message_text(
             "Envoyez maintenant 1 média autorisé, légal et consenti.\n\n"
             "Il sera transmis à l’admin pour analyse."
         )
         return
 
-
-# =========================
-# CALLBACK REVIEW ADMIN
-# =========================
 
 async def review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -539,14 +541,12 @@ async def review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
             await q.message.reply_text("Accès accordé et lien envoyé.")
+
         except TelegramError as e:
             await q.message.reply_text(f"Erreur création lien : {e}")
+
         return
 
-
-# =========================
-# MEDIA UTILISATEUR
-# =========================
 
 async def media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -577,11 +577,17 @@ async def media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     with db() as con:
-        cur = con.execute(
-            "INSERT INTO submissions(user_id, file_id, media_type) VALUES(?,?,?)",
-            (user.id, file_id, media_type)
-        )
-        sub_id = cur.lastrowid
+        with con.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO submissions(user_id, file_id, media_type)
+                VALUES(%s, %s, %s)
+                RETURNING id
+                """,
+                (user.id, file_id, media_type)
+            )
+            sub_id = cur.fetchone()["id"]
+            con.commit()
 
     set_user(user.id, status=UNDER_REVIEW)
     inc("submissions")
@@ -613,10 +619,6 @@ async def media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.warning("Impossible d’envoyer le média à l’admin %s : %s", admin, e)
 
 
-# =========================
-# TEXTES ADMIN + MODERATION
-# =========================
-
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     message = update.message
@@ -633,7 +635,13 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         with db() as con:
-            con.execute("INSERT OR IGNORE INTO forbidden_words(word) VALUES(?)", (word,))
+            with con.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO forbidden_words(word)
+                    VALUES(%s)
+                    ON CONFLICT (word) DO NOTHING
+                """, (word,))
+                con.commit()
 
         context.user_data.clear()
         await message.reply_text(f"Mot interdit ajouté : {word}")
@@ -675,7 +683,9 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.effective_chat and update.effective_chat.id == MAIN_GROUP_ID:
         with db() as con:
-            words = [r["word"] for r in con.execute("SELECT word FROM forbidden_words").fetchall()]
+            with con.cursor() as cur:
+                cur.execute("SELECT word FROM forbidden_words")
+                words = [r["word"] for r in cur.fetchall()]
 
         lowered = text.lower()
 
@@ -695,10 +705,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.warning("Erreur modération : %s", e)
 
 
-# =========================
-# SUPPRESSION ARRIVEES / SORTIES
-# =========================
-
 async def delete_join_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
 
@@ -716,21 +722,16 @@ async def delete_join_leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.warning("Impossible de supprimer arrivée/sortie : %s", e)
 
 
-# =========================
-# ERROR HANDLER
-# =========================
-
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.exception("Erreur non gérée :", exc_info=context.error)
 
 
-# =========================
-# MAIN
-# =========================
-
 def main():
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN manquant")
+
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL manquant")
 
     init_db()
 
