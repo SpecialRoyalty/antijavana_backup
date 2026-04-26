@@ -94,8 +94,10 @@ UNDER_REVIEW_TEXT = "Votre demande est en cours d’analyse."
 BANNED_TEXT = "L’accès au groupe ne vous sera pas attribué."
 
 GROUP_RULES_TEXT = """Règles du groupe :
-- Participer
-- Être de bonne humeur
+- Envoyer directement son contenu avant de faire des demandes
+- Accompagner les nouveaux
+- Ne pas faire fuiter le contenu du groupe ni ruiner le travail et l’apport de chacun
+- Proposer des créateurs/créatrices de contenu pour acheter des médias en groupe via une cotisation ou un pot commun
 """
 
 WAITING = "waiting"
