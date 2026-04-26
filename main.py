@@ -23,6 +23,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 MAIN_GROUP_ID = int(os.getenv("MAIN_GROUP_ID", "0"))
+SECONDARY_GROUP_ID = int(os.getenv("SECONDARY_GROUP_ID", "0"))
 
 ADMIN_IDS = {
     int(x.strip())
@@ -30,9 +31,9 @@ ADMIN_IDS = {
     if x.strip().isdigit()
 }
 
-START_PHOTO_URL = "https://i.imgur.com/aBGeeew.jpeg"
-AD_PHOTO_URL = "https://i.imgur.com/T8n80sb.jpeg"
-SHARE_AD_PHOTO_URL = "https://i.imgur.com/4AsL6mW.jpeg"
+START_PHOTO_URL = "https://ton-site.com/start.jpg"
+AD_PHOTO_URL = "https://ton-site.com/pub.jpg"
+SHARE_AD_PHOTO_URL = "https://ton-site.com/partage.jpg"
 
 START_TEXT = """Bienvenue 👋
 
@@ -74,6 +75,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
+
 logger = logging.getLogger(__name__)
 
 
@@ -83,16 +85,15 @@ def now_iso():
 
 def db():
     if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL manquant. Ajoute PostgreSQL sur Railway.")
+        raise RuntimeError("DATABASE_URL manquant.")
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 
 def init_db():
-    logger.info("Initialisation PostgreSQL (bot tables)")
+    logger.info("Initialisation PostgreSQL")
 
     with db() as con:
         with con.cursor() as cur:
-
             cur.execute("""
             CREATE TABLE IF NOT EXISTS bot_users (
                 user_id BIGINT PRIMARY KEY,
@@ -125,32 +126,43 @@ def init_db():
             );
             """)
 
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS forbidden_words (
+                id SERIAL PRIMARY KEY,
+                group_id BIGINT NOT NULL,
+                word VARCHAR(255) NOT NULL,
+                is_active BOOLEAN NOT NULL DEFAULT true,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            );
+            """)
+
             con.commit()
 
             cur.execute("""
             SELECT table_name
             FROM information_schema.tables
             WHERE table_schema = 'public'
-            ORDER BY table_name;
+            ORDER BY table_name
             """)
 
-            tables = [r["table_name"] for r in cur.fetchall()]
-            logger.info("Tables actuelles : %s", tables)
+            logger.info("Tables DB : %s", [r["table_name"] for r in cur.fetchall()])
 
 
 def inc(key: str, n: int = 1):
     with db() as con:
         with con.cursor() as cur:
             cur.execute("""
-                INSERT INTO stats(key, value)
+                INSERT INTO bot_stats(key, value)
                 VALUES(%s, 0)
                 ON CONFLICT (key) DO NOTHING
             """, (key,))
+
             cur.execute("""
-                UPDATE stats
+                UPDATE bot_stats
                 SET value = value + %s
                 WHERE key = %s
             """, (n, key))
+
             con.commit()
 
 
@@ -158,7 +170,7 @@ def set_user(user_id: int, **fields):
     with db() as con:
         with con.cursor() as cur:
             cur.execute("""
-                INSERT INTO users(user_id)
+                INSERT INTO bot_users(user_id)
                 VALUES(%s)
                 ON CONFLICT (user_id) DO NOTHING
             """, (user_id,))
@@ -167,7 +179,11 @@ def set_user(user_id: int, **fields):
                 fields["updated_at"] = now_iso()
                 columns = ", ".join([f"{k} = %s" for k in fields])
                 values = list(fields.values()) + [user_id]
-                cur.execute(f"UPDATE users SET {columns} WHERE user_id = %s", values)
+
+                cur.execute(
+                    f"UPDATE bot_users SET {columns} WHERE user_id = %s",
+                    values
+                )
 
             con.commit()
 
@@ -175,7 +191,7 @@ def set_user(user_id: int, **fields):
 def get_user(user_id: int):
     with db() as con:
         with con.cursor() as cur:
-            cur.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
+            cur.execute("SELECT * FROM bot_users WHERE user_id = %s", (user_id,))
             return cur.fetchone()
 
 
@@ -202,6 +218,7 @@ async def get_bot_username(context: ContextTypes.DEFAULT_TYPE) -> str:
     if "bot_username" not in context.application.bot_data:
         me = await context.bot.get_me()
         context.application.bot_data["bot_username"] = me.username
+
     return context.application.bot_data["bot_username"]
 
 
@@ -214,10 +231,29 @@ async def safe_reply_photo(message, photo_url: str, caption: str, reply_markup=N
                 reply_markup=reply_markup,
             )
         except BadRequest:
-            logger.warning("Image invalide ou inaccessible : %s", photo_url)
+            logger.warning("Image invalide : %s", photo_url)
 
     return await message.reply_text(
         caption + "\n\n⚠️ Image non chargée. Vérifie l’URL dans le code.",
+        reply_markup=reply_markup,
+    )
+
+
+async def safe_send_photo_or_text(context, chat_id: int, photo_url: str, caption: str, reply_markup=None):
+    if photo_url and photo_url.startswith("http"):
+        try:
+            return await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=photo_url,
+                caption=caption,
+                reply_markup=reply_markup,
+            )
+        except BadRequest:
+            logger.warning("Image invalide : %s", photo_url)
+
+    return await context.bot.send_message(
+        chat_id=chat_id,
+        text=caption + "\n\n⚠️ Image non chargée. Vérifie l’URL dans le code.",
         reply_markup=reply_markup,
     )
 
@@ -232,7 +268,7 @@ async def safe_send_message(context, chat_id: int, text: str, reply_markup=None)
     except Forbidden:
         logger.warning("Impossible d’envoyer un message à %s", chat_id)
     except TelegramError as e:
-        logger.warning("Erreur Telegram send_message : %s", e)
+        logger.warning("Erreur Telegram : %s", e)
 
 
 def share_button():
@@ -247,6 +283,8 @@ def admin_panel():
         [InlineKeyboardButton("🖼 Publicité", callback_data="admin:share_ad")],
         [InlineKeyboardButton("📊 Statistiques", callback_data="admin:stats")],
         [InlineKeyboardButton("➕ Ajouter mot interdit", callback_data="admin:add_word")],
+        [InlineKeyboardButton("➖ Enlever mot interdit", callback_data="admin:remove_word")],
+        [InlineKeyboardButton("📋 Voir mots interdits", callback_data="admin:list_words")],
         [InlineKeyboardButton("📣 Broadcast groupe", callback_data="admin:broadcast")],
     ])
 
@@ -262,7 +300,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     row = get_user(user.id)
 
     if is_admin(user.id):
-        await message.reply_text("Panel admin :", reply_markup=admin_panel())
+        await message.reply_text("Panel administrateur :", reply_markup=admin_panel())
         return
 
     if row and row["status"] in (WAITING, UNDER_REVIEW, APPROVED, BANNED):
@@ -289,7 +327,7 @@ async def panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Accès refusé.")
         return
 
-    await update.message.reply_text("Panel admin :", reply_markup=admin_panel())
+    await update.message.reply_text("Panel administrateur :", reply_markup=admin_panel())
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -322,6 +360,7 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append("✅ DATABASE_URL présent" if DATABASE_URL else "❌ DATABASE_URL manquant")
             lines.append(f"✅ Admins configurés : {len(ADMIN_IDS)}" if ADMIN_IDS else "❌ ADMIN_IDS manquant")
             lines.append(f"✅ MAIN_GROUP_ID présent : {MAIN_GROUP_ID}" if MAIN_GROUP_ID else "❌ MAIN_GROUP_ID manquant")
+            lines.append(f"✅ SECONDARY_GROUP_ID présent : {SECONDARY_GROUP_ID}" if SECONDARY_GROUP_ID else "❌ SECONDARY_GROUP_ID manquant")
 
             try:
                 with db() as con:
@@ -357,26 +396,40 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if getattr(bot_member, "can_invite_users", False):
                         lines.append("✅ Droit invitation utilisateurs OK")
                     else:
-                        lines.append("⚠️ Droit création lien/invitation possiblement manquant")
+                        lines.append("⚠️ Droit invitation utilisateurs manquant")
 
                 except Exception as e:
                     lines.append("❌ Impossible d’accéder au groupe principal")
                     lines.append(f"Détail : {e}")
 
-            current_chat = q.message.chat
-            lines.append("")
+            if SECONDARY_GROUP_ID:
+                try:
+                    chat = await context.bot.get_chat(SECONDARY_GROUP_ID)
+                    bot_member = await context.bot.get_chat_member(SECONDARY_GROUP_ID, context.bot.id)
 
-            if current_chat.id == MAIN_GROUP_ID:
-                lines.append("ℹ️ Vous êtes actuellement dans le groupe principal.")
-            elif current_chat.type in ("group", "supergroup"):
-                lines.append("✅ Ce chat peut servir de groupe secondaire pour afficher la pub.")
-            else:
-                lines.append("ℹ️ Vous êtes en privé. Pour publier la pub dans un groupe secondaire, ajoute le bot dans ce groupe et fais /panel dedans.")
+                    lines.append(f"✅ Groupe secondaire trouvé : {chat.title}")
+
+                    if bot_member.status in ("administrator", "creator"):
+                        lines.append("✅ Bot admin dans le groupe secondaire")
+                    else:
+                        lines.append("⚠️ Bot présent dans le groupe secondaire mais pas admin")
+
+                except Exception as e:
+                    lines.append("❌ Impossible d’accéder au groupe secondaire")
+                    lines.append(f"Détail : {e}")
+
+            lines.append("")
+            lines.append("ℹ️ Afficher la pub → groupe secondaire")
+            lines.append("ℹ️ Publicité → groupe principal")
 
             await q.message.reply_text("\n".join(lines))
             return
 
         if action == "show_ad":
+            if not SECONDARY_GROUP_ID:
+                await q.message.reply_text("❌ SECONDARY_GROUP_ID manquant dans Railway.")
+                return
+
             bot_username = await get_bot_username(context)
 
             keyboard = InlineKeyboardMarkup([
@@ -387,37 +440,93 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [share_button()],
             ])
 
-            await safe_reply_photo(q.message, AD_PHOTO_URL, AD_TEXT, keyboard)
-            inc("ads_shown")
+            try:
+                await safe_send_photo_or_text(
+                    context,
+                    SECONDARY_GROUP_ID,
+                    AD_PHOTO_URL,
+                    AD_TEXT,
+                    keyboard
+                )
+                inc("ads_shown")
+                await q.message.reply_text("✅ Publicité envoyée dans le groupe secondaire.")
+            except TelegramError as e:
+                await q.message.reply_text(f"❌ Impossible d’envoyer dans le groupe secondaire : {e}")
+
             return
 
         if action == "share_ad":
+            if not MAIN_GROUP_ID:
+                await q.message.reply_text("❌ MAIN_GROUP_ID manquant dans Railway.")
+                return
+
             keyboard = InlineKeyboardMarkup([[share_button()]])
-            await safe_reply_photo(q.message, SHARE_AD_PHOTO_URL, SHARE_PANEL_TEXT, keyboard)
-            inc("share_panels_shown")
+
+            try:
+                await safe_send_photo_or_text(
+                    context,
+                    MAIN_GROUP_ID,
+                    SHARE_AD_PHOTO_URL,
+                    SHARE_PANEL_TEXT,
+                    keyboard
+                )
+                inc("share_panels_shown")
+                await q.message.reply_text("✅ Panneau publicité envoyé dans le groupe principal.")
+            except TelegramError as e:
+                await q.message.reply_text(f"❌ Impossible d’envoyer dans le groupe principal : {e}")
+
             return
 
         if action == "stats":
+            status_fr = {
+                "new": "Nouveaux",
+                "waiting": "Liste d’attente",
+                "pending_media": "Média attendu",
+                "under_review": "En analyse",
+                "approved": "Acceptés",
+                "banned": "Bannis",
+                "refused": "Refusés",
+            }
+
+            stats_fr = {
+                "ads_shown": "Publicités affichées",
+                "share_panels_shown": "Panneaux publicité affichés",
+                "waitlist": "Ajouts liste d’attente",
+                "submissions": "Demandes envoyées",
+                "approved": "Accès donnés",
+                "banned": "Utilisateurs bannis",
+                "refused": "Accès refusés",
+                "broadcasts": "Broadcasts envoyés",
+                "restricted": "Utilisateurs restreints",
+                "join_leave_deleted": "Messages arrivée/sortie supprimés",
+            }
+
             with db() as con:
                 with con.cursor() as cur:
-                    cur.execute("SELECT status, COUNT(*) AS c FROM users GROUP BY status")
+                    cur.execute("SELECT status, COUNT(*) AS c FROM bot_users GROUP BY status")
                     users = cur.fetchall()
 
-                    cur.execute("SELECT key, value FROM stats ORDER BY key")
+                    cur.execute("SELECT key, value FROM bot_stats ORDER BY key")
                     stats = cur.fetchall()
 
-                    cur.execute("SELECT COUNT(*) AS c FROM forbidden_words")
+                    cur.execute("""
+                    SELECT COUNT(*) AS c
+                    FROM forbidden_words
+                    WHERE group_id = %s AND is_active = true
+                    """, (MAIN_GROUP_ID,))
                     words = cur.fetchone()["c"]
 
             lines = ["📊 Statistiques\n", "Utilisateurs :"]
             for r in users:
-                lines.append(f"- {r['status']}: {r['c']}")
+                label = status_fr.get(r["status"], r["status"])
+                lines.append(f"- {label} : {r['c']}")
 
             lines.append("\nActions :")
             for s in stats:
-                lines.append(f"- {s['key']}: {s['value']}")
+                label = stats_fr.get(s["key"], s["key"])
+                lines.append(f"- {label} : {s['value']}")
 
-            lines.append(f"\nMots interdits : {words}")
+            lines.append(f"\nMots interdits actifs : {words}")
 
             await q.message.reply_text("\n".join(lines))
             return
@@ -425,6 +534,31 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if action == "add_word":
             context.user_data["mode"] = "add_word"
             await q.message.reply_text("Envoie le mot interdit à ajouter. /cancel pour annuler.")
+            return
+
+        if action == "remove_word":
+            context.user_data["mode"] = "remove_word"
+            await q.message.reply_text("Envoie le mot interdit à désactiver. /cancel pour annuler.")
+            return
+
+        if action == "list_words":
+            with db() as con:
+                with con.cursor() as cur:
+                    cur.execute("""
+                    SELECT word
+                    FROM forbidden_words
+                    WHERE group_id = %s AND is_active = true
+                    ORDER BY word
+                    """, (MAIN_GROUP_ID,))
+                    rows = cur.fetchall()
+
+            if not rows:
+                await q.message.reply_text("📋 Aucun mot interdit actif.")
+            else:
+                await q.message.reply_text(
+                    "📋 Mots interdits actifs :\n\n" +
+                    "\n".join([f"- {r['word']}" for r in rows])
+                )
             return
 
         if action == "broadcast":
@@ -473,7 +607,11 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data in ("user:type_known", "user:type_ama"):
-        set_user(user_id, status=PENDING_MEDIA, content_type=data.replace("user:type_", ""))
+        set_user(
+            user_id,
+            status=PENDING_MEDIA,
+            content_type=data.replace("user:type_", "")
+        )
         await q.edit_message_text(
             "Envoyez maintenant 1 média autorisé, légal et consenti.\n\n"
             "Il sera transmis à l’admin pour analyse."
@@ -574,14 +712,12 @@ async def media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     with db() as con:
         with con.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO submissions(user_id, file_id, media_type)
-                VALUES(%s, %s, %s)
-                RETURNING id
-                """,
-                (user.id, file_id, media_type)
-            )
+            cur.execute("""
+            INSERT INTO bot_submissions(user_id, file_id, media_type)
+            VALUES(%s, %s, %s)
+            RETURNING id
+            """, (user.id, file_id, media_type))
+
             sub_id = cur.fetchone()["id"]
             con.commit()
 
@@ -633,14 +769,37 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with db() as con:
             with con.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO forbidden_words(word)
-                    VALUES(%s)
-                    ON CONFLICT (word) DO NOTHING
-                """, (word,))
+                INSERT INTO forbidden_words(group_id, word, is_active)
+                VALUES(%s, %s, true)
+                """, (MAIN_GROUP_ID, word))
+
                 con.commit()
 
         context.user_data.clear()
         await message.reply_text(f"Mot interdit ajouté : {word}")
+        return
+
+    if is_admin(user.id) and context.user_data.get("mode") == "remove_word":
+        word = text.lower().strip()
+
+        with db() as con:
+            with con.cursor() as cur:
+                cur.execute("""
+                UPDATE forbidden_words
+                SET is_active = false
+                WHERE group_id = %s AND LOWER(word) = LOWER(%s)
+                """, (MAIN_GROUP_ID, word))
+
+                affected = cur.rowcount
+                con.commit()
+
+        context.user_data.clear()
+
+        if affected:
+            await message.reply_text(f"Mot interdit désactivé : {word}")
+        else:
+            await message.reply_text(f"Mot introuvable ou déjà inactif : {word}")
+
         return
 
     if is_admin(user.id) and context.user_data.get("mode") == "broadcast":
@@ -652,7 +811,16 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await safe_send_message(context, MAIN_GROUP_ID, text)
         inc("broadcasts")
-        await message.reply_text("Broadcast envoyé.")
+
+        with db() as con:
+            with con.cursor() as cur:
+                cur.execute("""
+                INSERT INTO broadcast_logs(group_id, admin_user_id, message)
+                VALUES(%s, %s, %s)
+                """, (MAIN_GROUP_ID, user.id, text))
+                con.commit()
+
+        await message.reply_text("Broadcast envoyé dans le groupe principal.")
         return
 
     if is_admin(user.id) and context.user_data.get("mode") == "refuse_reason":
@@ -680,7 +848,12 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat and update.effective_chat.id == MAIN_GROUP_ID:
         with db() as con:
             with con.cursor() as cur:
-                cur.execute("SELECT word FROM forbidden_words")
+                cur.execute("""
+                SELECT word
+                FROM forbidden_words
+                WHERE group_id = %s AND is_active = true
+                """, (MAIN_GROUP_ID,))
+
                 words = [r["word"] for r in cur.fetchall()]
 
         lowered = text.lower()
@@ -696,6 +869,18 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
 
                 inc("restricted")
+
+                with db() as con:
+                    with con.cursor() as cur:
+                        cur.execute("""
+                        INSERT INTO member_offenses(group_id, user_id, offense_type, offense_count, last_offense_at)
+                        VALUES(%s, %s, %s, 1, NOW())
+                        ON CONFLICT(group_id, user_id, offense_type)
+                        DO UPDATE SET
+                            offense_count = member_offenses.offense_count + 1,
+                            last_offense_at = NOW()
+                        """, (MAIN_GROUP_ID, user.id, "forbidden_word"))
+                        con.commit()
 
             except TelegramError as e:
                 logger.warning("Erreur modération : %s", e)
