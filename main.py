@@ -31,9 +31,9 @@ ADMIN_IDS = {
     if x.strip().isdigit()
 }
 
-START_PHOTO_URL = "https://ton-site.com/start.jpg"
-AD_PHOTO_URL = "https://ton-site.com/pub.jpg"
-SHARE_AD_PHOTO_URL = "https://ton-site.com/partage.jpg"
+START_PHOTO_URL = "https://files.catbox.moe/8iio0w.jpg"
+AD_PHOTO_URL = "https://files.catbox.moe/j24fx2.jpg"
+SHARE_AD_PHOTO_URL = "https://files.catbox.moe/7sw1q5.jpg"
 
 START_TEXT = """Bienvenue 👋
 
