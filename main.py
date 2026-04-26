@@ -34,29 +34,62 @@ ADMIN_IDS = {
 
 USER_REPLY_DELAY = 10
 
-START_PHOTO_URL = "https://ton-site.com/start.jpg"
-AD_PHOTO_URL = "https://ton-site.com/pub.jpg"
-SHARE_AD_PHOTO_URL = "https://ton-site.com/partage.jpg"
+TART_PHOTO_URL = "https://files.catbox.moe/8iio0w.jpg"
+AD_PHOTO_URL = "https://files.catbox.moe/j24fx2.jpg"
+SHARE_AD_PHOTO_URL = "https://files.catbox.moe/7sw1q5.jpg"
 
-START_TEXT = """Bienvenue 👋
+START_TEXT = """👋 Bienvenue
 
-Ce bot permet de demander l’accès au groupe exclusif.
+Tu souhaites rejoindre un groupe vraiment exclusif ? Tu es au bon endroit.
 
-Réponds au formulaire, puis un admin analysera ta demande.
-Merci d’envoyer uniquement du contenu autorisé, légal et consenti.
-"""
+🔐 Ici, l’entrée est sélective :
+- Chaque membre possède de véritables contenus exclusifs
+- Les contenus déjà vus ou trop partagés ne sont pas acceptés
 
-AD_TEXT = """Rejoins le groupe exclusif 🔐
+Que tu sois créateur ou acheteur régulier de contenu privé, tu rejoindras une communauté de personnes comme toi.
 
-Clique sur le bouton ci-dessous pour commencer ta demande d’accès.
-"""
+🤖 Processus 100% automatisé  
+Réponds au formulaire, puis ta demande sera analysée automatiquement.  
+Aucun humain n’intervient : uniquement de l’IA pour garantir confidentialité, impartialité et critères objectifs.
+
+⚠️ Important  
+Seuls les profils apportant une vraie valeur seront acceptés.
+
+👇 Commence maintenant"""
+
+AD_TEXT = """🔐 Rejoins un groupe vraiment exclusif
+
+Tu en as marre d’être le seul à partager ?
+Marre de donner plus que tu ne reçois ?
+Marre de tomber toujours sur les mêmes contenus qui tournent en boucle ?
+
+👉 Ici, on change les règles.
+
+Ce groupe est réservé à ceux qui ont de vraies exclusivités ou qui investissent régulièrement dans du contenu privé MYM/Onlyfans ou ceux qui en produisent eux meme en étant amateur
+Pas de pertes de temps, pas de faux profils, pas de gens qui viennent juste “gratter”.
+
+✔ Échange 100% basé sur de l’exclusif
+✔ Aucun intermédiaire : direct entre membres
+✔ Communauté engagée, chacun participe et apporte de la valeur
+
+⚠️ Places limitées : seulement 200 membres pour garantir la qualité du groupe.
+
+Si tu veux enfin accéder à du contenu différent, rare, et à une vraie communauté d’échange…
+
+👇 Rejoins-nous maintenant"""
 
 SHARE_TEXT = "Rejoins ce groupe Telegram exclusif 🔥"
 
-SHARE_PANEL_TEXT = """Aidez-nous à faire grandir le groupe 💪
+SHARE_PANEL_TEXT = """🚀 Fais grandir une communauté d’élite
 
-Partagez ce groupe à vos contacts ou dans vos groupes Telegram.
-"""
+Plus le groupe grandit, plus les exclusivités deviennent rares et intéressantes.
+
+💎 Invite uniquement des personnes fiables et actives
+🤝 Plus de membres qualifiés = plus de contenu premium pour tous
+
+Partage le groupe à tes contacts ou dans tes meilleurs groupes Telegram.
+
+👇 À toi de jouer"""
 
 WAITLIST_TEXT = "Vous êtes sur la liste d’attente."
 UNDER_REVIEW_TEXT = "Votre demande est en cours d’analyse."
