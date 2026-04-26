@@ -32,7 +32,7 @@ ADMIN_IDS = {
     if x.strip().isdigit()
 }
 
-USER_REPLY_DELAY = 10
+USER_REPLY_DELAY = 1
 
 TART_PHOTO_URL = "https://files.catbox.moe/8iio0w.jpg"
 AD_PHOTO_URL = "https://files.catbox.moe/j24fx2.jpg"
@@ -80,12 +80,13 @@ Si tu veux enfin accéder à du contenu différent, rare, et à une vraie commun
 
 SHARE_TEXT = "Rejoins ce groupe Telegram exclusif 🔥"
 
-SHARE_PANEL_TEXT = """🚀 Fais grandir une communauté d’élite
+SHARE_PANEL_TEXT = """🚀 Fais grandir une communauté
 
 Plus le groupe grandit, plus les exclusivités deviennent rares et intéressantes.
 
 💎 Invite uniquement des personnes fiables et actives
 🤝 Plus de membres qualifiés = plus de contenu premium pour tous
+💰 Possibilité de se regrouper à plusieurs pour acheter du contenu privé
 
 Partage le groupe à tes contacts ou dans tes meilleurs groupes Telegram.
 
@@ -628,7 +629,7 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             q,
             "Choisissez une option :",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ Je possède du contenu exclusif autorisé", callback_data="user:has_content")],
+                [InlineKeyboardButton("✅ Je possède du contenu exclusif", callback_data="user:has_content")],
                 [InlineKeyboardButton("🤝 Je ne possède pas de contenu exclusif mais je peux contribuer", callback_data="user:no_content")],
             ])
         )
@@ -648,8 +649,8 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             q,
             "Quel type de contenu possédez-vous ?",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("Contenu autorisé sur créatrice connue", callback_data="user:type_known")],
-                [InlineKeyboardButton("Contenu exclusif AMA autorisé", callback_data="user:type_ama")],
+                [InlineKeyboardButton("Contenu autorisé sur créatrice MYM/Onlyfans FR Exclusif", callback_data="user:type_known")],
+                [InlineKeyboardButton("Contenu exclusif Amateur qui a peu/pas tourné", callback_data="user:type_ama")],
             ])
         )
         return
@@ -663,8 +664,8 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await delayed_user_reply()
         await safe_callback_text(
             q,
-            "Envoyez maintenant 1 média autorisé, légal et consenti.\n\n"
-            "Il sera transmis à l’admin pour analyse."
+            "Ce n’est pas qu’on ne te croit pas, mais envoie un média de ton choix.\n\n"
+            "Je l'analyserais afin de vérifier qu’il n’a pas été diffusé sur des groupes Telegram ou présent sur des plateformes de leaks."
         )
         return
 
@@ -889,7 +890,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             target_id,
             "Votre accès est refusé pour la raison suivante :\n\n"
             f"{text}\n\n"
-            "Vous pouvez recommencer le formulaire avec /start."
+            "Vous pouvez recommencer le formulaire avec /start.Attention, prochainement vous serez banni !"
         )
 
         await message.reply_text("Raison envoyée à l’utilisateur.")
