@@ -43,26 +43,66 @@ Réponds au formulaire, puis un admin analysera ta demande.
 Merci d’envoyer uniquement du contenu autorisé, légal et consenti.
 """
 
-AD_TEXT = """Rejoins le groupe exclusif 🔐
+AD_TEXT = """🔐 Rejoins un groupe vraiment exclusif
 
-Clique sur le bouton ci-dessous pour commencer ta demande d’accès.
-"""
+Tu en as marre d’être le seul à partager ?
+Marre de donner plus que tu ne reçois ?
+Marre de tomber toujours sur les mêmes contenus qui tournent en boucle ?
+
+👉 Ici, on change les règles.
+
+Ce groupe est réservé à ceux qui ont de vraies exclusivités ou qui investissent régulièrement dans du contenu privé MYM/Onlyfans ou ceux qui en produisent eux meme en étant amateur
+Pas de pertes de temps, pas de faux profils, pas de gens qui viennent juste “gratter”.
+
+✔ Échange 100% basé sur de l’exclusif
+✔ Aucun intermédiaire : direct entre membres
+✔ Communauté engagée, chacun participe et apporte de la valeur
+
+⚠️ Places limitées : seulement 200 membres pour garantir la qualité du groupe.
+
+Si tu veux enfin accéder à du contenu différent, rare, et à une vraie communauté d’échange…
+
+👇 Rejoins-nous maintenant"""
 
 SHARE_TEXT = "Rejoins ce groupe Telegram exclusif 🔥"
 
-SHARE_PANEL_TEXT = """Aidez-nous à faire grandir le groupe 💪
+SHARE_PANEL_TEXT = """🚀 Fais grandir une communauté d’élite
 
-Partagez ce groupe à vos contacts ou dans vos groupes Telegram.
-"""
+Plus le groupe grandit, plus les exclusivités deviennent rares et intéressantes.
+
+💎 Invite uniquement des personnes fiables et actives
+🤝 Plus de membres qualifiés = plus de contenu premium pour tous
+
+Partage le groupe à tes contacts ou dans tes meilleurs groupes Telegram.
+
+👇 À toi de jouer"""
 
 WAITLIST_TEXT = "Vous êtes sur la liste d’attente."
 UNDER_REVIEW_TEXT = "Votre demande est en cours d’analyse."
 BANNED_TEXT = "L’accès au groupe ne vous sera pas attribué."
 
-GROUP_RULES_TEXT = """Règles du groupe :
-- Participer
-- Être de bonne humeur
-"""
+GROUP_RULES_TEXT = """📜 Règles du groupe
+
+1. Contribution obligatoire  
+Publie du contenu avant d’entamer toute négociation ou demande d’échange.
+
+2. Échanges internes uniquement  
+Tous les échanges doivent se faire exclusivement à l’intérieur du groupe.
+
+3. Respect  
+Les discussions sont autorisées, dans le respect de chacun.
+
+4. Auto-modération  
+Il n’y a pas de modération classique. En cas d’abus, un vote peut être organisé pour exclure un membre.
+
+5. Activité requise  
+Des vérifications aléatoires sont effectuées pour s’assurer que chaque membre participe activement.
+
+🚀 Évolutions à venir  
+Des fonctionnalités seront ajoutées, comme un système de cagnotte via bot pour acheter du contenu privé à plusieurs.
+
+⚠️ Important  
+Ce groupe n’est pas un espace de discussion inutile : il est dédié au partage et à l’échange de contenu de valeur."""
 
 WAITING = "waiting"
 PENDING_MEDIA = "pending_media"
