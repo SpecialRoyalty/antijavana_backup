@@ -49,32 +49,24 @@ Tu souhaites rejoindre un groupe vraiment exclusif ? Tu es au bon endroit.
 Que tu sois créateur ou acheteur régulier de contenu privé, tu rejoindras une communauté de personnes comme toi.
 
 🤖 Processus 100% automatisé  
-Réponds au formulaire, puis ta demande sera analysée automatiquement.  
-Aucun humain n’intervient : uniquement de l’IA pour garantir confidentialité, impartialité et critères objectifs.
-
-⚠️ Important  
-Seuls les profils apportant une vraie valeur seront acceptés.
+⚠️ Important : aucun support disponible
 
 👇 Commence maintenant"""
 
 AD_TEXT = """🔐 Rejoins un groupe vraiment exclusif
 
-Tu en as marre d’être le seul à partager ?
-Marre de donner plus que tu ne reçois ?
-Marre de tomber toujours sur les mêmes contenus qui tournent en boucle ?
+Marre de ceux qui demande sans poster ?
+Marre de voir toujours les mêmes contenus ?
 
-👉 Ici, on change les règles.
+👉 Ici, seuls les vrais apportent de la valeur.
 
-Ce groupe est réservé à ceux qui ont de vraies exclusivités ou qui investissent régulièrement dans du contenu privé MYM/Onlyfans ou ceux qui en produisent eux meme en étant amateur
-Pas de pertes de temps, pas de faux profils, pas de gens qui viennent juste “gratter”.
+Accès réservé à ceux qui ont de vraies exclusivités ou qui investissent régulièrement (MYM / OnlyFans) ou en produisent eux-mêmes.
 
-✔ Échange 100% basé sur de l’exclusif
-✔ Aucun intermédiaire : direct entre membres
-✔ Communauté engagée, chacun participe et apporte de la valeur
+✔ Échange 100% exclusif  
+✔ Aucun média qui a déjà tourné  
+✔ Communauté active et qualitative  
 
-⚠️ Places limitées : seulement 200 membres pour garantir la qualité du groupe.
-
-Si tu veux enfin accéder à du contenu différent, rare, et à une vraie communauté d’échange…
+⚠️ 200 places maximum
 
 👇 Rejoins-nous maintenant"""
 
@@ -325,8 +317,8 @@ def share_button():
 def admin_panel():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("⚙️ Vérifier configuration", callback_data="admin:check_config")],
-        [InlineKeyboardButton("📢 Afficher la pub", callback_data="admin:show_ad")],
-        [InlineKeyboardButton("🖼 Publicité", callback_data="admin:share_ad")],
+        [InlineKeyboardButton("📢 Publier dans groupe sécondaire", callback_data="admin:show_ad")],
+        [InlineKeyboardButton("🖼 Publier dans groupe principale", callback_data="admin:share_ad")],
         [InlineKeyboardButton("📊 Statistiques", callback_data="admin:stats")],
         [InlineKeyboardButton("➕ Ajouter mot interdit", callback_data="admin:add_word")],
         [InlineKeyboardButton("➖ Enlever mot interdit", callback_data="admin:remove_word")],
