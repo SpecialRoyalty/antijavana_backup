@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote_plus
 
@@ -31,89 +32,40 @@ ADMIN_IDS = {
     if x.strip().isdigit()
 }
 
-START_PHOTO_URL = "https://files.catbox.moe/8iio0w.jpg"
-AD_PHOTO_URL = "https://files.catbox.moe/j24fx2.jpg"
-SHARE_AD_PHOTO_URL = "https://files.catbox.moe/7sw1q5.jpg"
+USER_REPLY_DELAY = 10
 
-START_TEXT = """👋 Bienvenue
+START_PHOTO_URL = "https://ton-site.com/start.jpg"
+AD_PHOTO_URL = "https://ton-site.com/pub.jpg"
+SHARE_AD_PHOTO_URL = "https://ton-site.com/partage.jpg"
 
-Tu souhaites rejoindre un groupe vraiment exclusif ? Tu es au bon endroit.
+START_TEXT = """Bienvenue 👋
 
-🔐 Ici, l’entrée est sélective :
-- Chaque membre possède de véritables contenus exclusifs
-- Les contenus déjà vus ou trop partagés ne sont pas acceptés
+Ce bot permet de demander l’accès au groupe exclusif.
 
-Que tu sois créateur ou acheteur régulier de contenu privé, tu rejoindras une communauté de personnes comme toi.
+Réponds au formulaire, puis un admin analysera ta demande.
+Merci d’envoyer uniquement du contenu autorisé, légal et consenti.
+"""
 
-🤖 Processus 100% automatisé  
-Réponds au formulaire, puis ta demande sera analysée automatiquement.  
-Aucun humain n’intervient : uniquement de l’IA pour garantir confidentialité, impartialité et critères objectifs.
+AD_TEXT = """Rejoins le groupe exclusif 🔐
 
-⚠️ Important  
-Seuls les profils apportant une vraie valeur seront acceptés.
-
-👇 Commence maintenant"""
-
-AD_TEXT = """🔐 Rejoins un groupe vraiment exclusif
-
-Tu en as marre d’être le seul à partager ?
-Marre de donner plus que tu ne reçois ?
-Marre de tomber toujours sur les mêmes contenus qui tournent en boucle ?
-
-👉 Ici, on change les règles.
-
-Ce groupe est réservé à ceux qui ont de vraies exclusivités ou qui investissent régulièrement dans du contenu privé MYM/Onlyfans ou ceux qui en produisent eux meme en étant amateur
-Pas de pertes de temps, pas de faux profils, pas de gens qui viennent juste “gratter”.
-
-✔ Échange 100% basé sur de l’exclusif
-✔ Aucun intermédiaire : direct entre membres
-✔ Communauté engagée, chacun participe et apporte de la valeur
-
-⚠️ Places limitées : seulement 200 membres pour garantir la qualité du groupe.
-
-Si tu veux enfin accéder à du contenu différent, rare, et à une vraie communauté d’échange…
-
-👇 Rejoins-nous maintenant"""
+Clique sur le bouton ci-dessous pour commencer ta demande d’accès.
+"""
 
 SHARE_TEXT = "Rejoins ce groupe Telegram exclusif 🔥"
 
-SHARE_PANEL_TEXT = """🚀 Fais grandir une communauté d’élite
+SHARE_PANEL_TEXT = """Aidez-nous à faire grandir le groupe 💪
 
-Plus le groupe grandit, plus les exclusivités deviennent rares et intéressantes.
-
-💎 Invite uniquement des personnes fiables et actives
-🤝 Plus de membres qualifiés = plus de contenu premium pour tous
-
-Partage le groupe à tes contacts ou dans tes meilleurs groupes Telegram.
-
-👇 À toi de jouer"""
+Partagez ce groupe à vos contacts ou dans vos groupes Telegram.
+"""
 
 WAITLIST_TEXT = "Vous êtes sur la liste d’attente."
 UNDER_REVIEW_TEXT = "Votre demande est en cours d’analyse."
 BANNED_TEXT = "L’accès au groupe ne vous sera pas attribué."
 
-GROUP_RULES_TEXT = """📜 Règles du groupe
-
-1. Contribution obligatoire  
-Publie du contenu avant d’entamer toute négociation ou demande d’échange.
-
-2. Échanges internes uniquement  
-Tous les échanges doivent se faire exclusivement à l’intérieur du groupe.
-
-3. Respect  
-Les discussions sont autorisées, dans le respect de chacun.
-
-4. Auto-modération  
-Il n’y a pas de modération classique. En cas d’abus, un vote peut être organisé pour exclure un membre.
-
-5. Activité requise  
-Des vérifications aléatoires sont effectuées pour s’assurer que chaque membre participe activement.
-
-🚀 Évolutions à venir  
-Des fonctionnalités seront ajoutées, comme un système de cagnotte via bot pour acheter du contenu privé à plusieurs.
-
-⚠️ Important  
-Ce groupe n’est pas un espace de discussion inutile : il est dédié au partage et à l’échange de contenu de valeur."""
+GROUP_RULES_TEXT = """Règles du groupe :
+- Participer
+- Être de bonne humeur
+"""
 
 WAITING = "waiting"
 PENDING_MEDIA = "pending_media"
@@ -126,7 +78,6 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
-
 logger = logging.getLogger(__name__)
 
 
@@ -195,7 +146,6 @@ def init_db():
             WHERE table_schema = 'public'
             ORDER BY table_name
             """)
-
             logger.info("Tables DB : %s", [r["table_name"] for r in cur.fetchall()])
 
 
@@ -265,6 +215,10 @@ def anti_spam(context: ContextTypes.DEFAULT_TYPE, user_id: int, seconds: int = 2
     return False
 
 
+async def delayed_user_reply():
+    await asyncio.sleep(USER_REPLY_DELAY)
+
+
 async def get_bot_username(context: ContextTypes.DEFAULT_TYPE) -> str:
     if "bot_username" not in context.application.bot_data:
         me = await context.bot.get_me()
@@ -322,6 +276,13 @@ async def safe_send_message(context, chat_id: int, text: str, reply_markup=None)
         logger.warning("Erreur Telegram : %s", e)
 
 
+async def safe_callback_text(q, text: str, reply_markup=None):
+    try:
+        await q.edit_message_text(text=text, reply_markup=reply_markup)
+    except BadRequest:
+        await q.message.reply_text(text=text, reply_markup=reply_markup)
+
+
 def share_button():
     url = "https://t.me/share/url?url=&text=" + quote_plus(SHARE_TEXT)
     return InlineKeyboardButton("🔁 Je partage ce groupe", url=url)
@@ -355,6 +316,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if row and row["status"] in (WAITING, UNDER_REVIEW, APPROVED, BANNED):
+        await delayed_user_reply()
+
         if row["status"] == WAITING:
             await message.reply_text(WAITLIST_TEXT)
         elif row["status"] == UNDER_REVIEW:
@@ -370,6 +333,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🌍 Je suis international", callback_data="user:intl")],
     ])
 
+    await delayed_user_reply()
     await safe_reply_photo(message, START_PHOTO_URL, START_TEXT, keyboard)
 
 
@@ -439,15 +403,8 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     else:
                         lines.append("❌ Bot présent mais pas admin dans le groupe principal")
 
-                    if getattr(bot_member, "can_delete_messages", False):
-                        lines.append("✅ Droit suppression messages OK")
-                    else:
-                        lines.append("⚠️ Droit suppression messages manquant")
-
-                    if getattr(bot_member, "can_invite_users", False):
-                        lines.append("✅ Droit invitation utilisateurs OK")
-                    else:
-                        lines.append("⚠️ Droit invitation utilisateurs manquant")
+                    lines.append("✅ Droit suppression messages OK" if getattr(bot_member, "can_delete_messages", False) else "⚠️ Droit suppression messages manquant")
+                    lines.append("✅ Droit invitation utilisateurs OK" if getattr(bot_member, "can_invite_users", False) else "⚠️ Droit invitation utilisateurs manquant")
 
                 except Exception as e:
                     lines.append("❌ Impossible d’accéder au groupe principal")
@@ -620,18 +577,22 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     row = get_user(user_id)
 
     if row and row["status"] in (WAITING, UNDER_REVIEW, BANNED, APPROVED):
+        await delayed_user_reply()
         await q.message.reply_text("Votre statut actuel ne permet pas de recommencer.")
         return
 
     if data == "user:intl":
         set_user(user_id, status=WAITING, lang="international")
         inc("waitlist")
-        await q.edit_message_text(WAITLIST_TEXT)
+        await delayed_user_reply()
+        await safe_callback_text(q, WAITLIST_TEXT)
         return
 
     if data == "user:fr":
         set_user(user_id, lang="fr")
-        await q.edit_message_text(
+        await delayed_user_reply()
+        await safe_callback_text(
+            q,
             "Choisissez une option :",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ Je possède du contenu exclusif autorisé", callback_data="user:has_content")],
@@ -643,12 +604,15 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "user:no_content":
         set_user(user_id, status=WAITING, has_content=0)
         inc("waitlist")
-        await q.edit_message_text(WAITLIST_TEXT)
+        await delayed_user_reply()
+        await safe_callback_text(q, WAITLIST_TEXT)
         return
 
     if data == "user:has_content":
         set_user(user_id, has_content=1)
-        await q.edit_message_text(
+        await delayed_user_reply()
+        await safe_callback_text(
+            q,
             "Quel type de contenu possédez-vous ?",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("Contenu autorisé sur créatrice connue", callback_data="user:type_known")],
@@ -663,7 +627,9 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             status=PENDING_MEDIA,
             content_type=data.replace("user:type_", "")
         )
-        await q.edit_message_text(
+        await delayed_user_reply()
+        await safe_callback_text(
+            q,
             "Envoyez maintenant 1 média autorisé, légal et consenti.\n\n"
             "Il sera transmis à l’admin pour analyse."
         )
@@ -775,6 +741,7 @@ async def media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     set_user(user.id, status=UNDER_REVIEW)
     inc("submissions")
 
+    await delayed_user_reply()
     await message.reply_text(UNDER_REVIEW_TEXT)
 
     keyboard = InlineKeyboardMarkup([
@@ -823,7 +790,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 INSERT INTO forbidden_words(group_id, word, is_active)
                 VALUES(%s, %s, true)
                 """, (MAIN_GROUP_ID, word))
-
                 con.commit()
 
         context.user_data.clear()
