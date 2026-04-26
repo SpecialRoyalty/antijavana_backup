@@ -467,6 +467,35 @@ async def main():
     await app.run_polling(drop_pending_updates=True)
 
 
+def main():
+    if not BOT_TOKEN:
+        raise RuntimeError("BOT_TOKEN manquant")
+
+    init_db()
+
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(review_callback, pattern=r"^review:"))
+    app.add_handler(CallbackQueryHandler(callbacks))
+
+    app.add_handler(MessageHandler(
+        filters.StatusUpdate.NEW_CHAT_MEMBERS | filters.StatusUpdate.LEFT_CHAT_MEMBER,
+        delete_join_leave
+    ))
+
+    app.add_handler(MessageHandler(
+        filters.PHOTO | filters.VIDEO | filters.Document.ALL,
+        media_handler
+    ))
+
+    app.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        text_handler
+    ))
+
+    app.run_polling(drop_pending_updates=True)
+
+
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()
