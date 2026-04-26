@@ -34,8 +34,8 @@ ADMIN_IDS = {
 
 USER_REPLY_DELAY = 1
 
-START_PHOTO_URL = "https://files.catbox.moe/8iio0w.jpg"
-AD_PHOTO_URL = "https://files.catbox.moe/j24fx2.jpg"
+START_PHOTO_URL = "https://files.catbox.moe/j24fx2.jpg"
+AD_PHOTO_URL = "https://files.catbox.moe/pkztzh.jpg"
 SHARE_AD_PHOTO_URL = "https://files.catbox.moe/7sw1q5.jpg"
 
 START_TEXT = """👋 Bienvenue
