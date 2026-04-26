@@ -51,7 +51,7 @@ Que tu sois créateur ou acheteur régulier de contenu privé, tu rejoindras une
 🤖 Processus 100% automatisé  
 ⚠️ Important : aucun support disponible
 
-👇 Commence maintenant"""
+👇 Commence maintenant . BY ANTIJAVANA GROUPE"""
 
 AD_TEXT = """🔐 Rejoins un groupe vraiment exclusif
 
@@ -70,7 +70,12 @@ Accès réservé à ceux qui ont de vraies exclusivités ou qui investissent ré
 
 👇 Rejoins-nous maintenant"""
 
-SHARE_TEXT = "Rejoins ce groupe Telegram exclusif 🔥"
+SHARE_TEXT = """🔐 Accès au groupe exclusif
+
+👉 Clique ici pour obtenir ton accès :
+https://t.me/ExcluGroup_bot?start=join
+
+⚠️ Accès limité — validation requise"""
 
 SHARE_PANEL_TEXT = """🚀 Fais grandir une communauté
 
