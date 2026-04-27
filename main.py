@@ -9,7 +9,7 @@ from psycopg.rows import dict_row
 from dotenv import load_dotenv
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions
-from telegram.error import BadRequest, Forbidden, TelegramError
+from telegram.error import BadRequest, Forbidden, RetryAfter, TelegramError
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -33,6 +33,11 @@ ADMIN_IDS = {
 }
 
 USER_REPLY_DELAY = 1
+
+# Broadcast utilisateurs safe
+BROADCAST_USER_DELAY = float(os.getenv("BROADCAST_USER_DELAY", "0.15"))
+BROADCAST_RETRY_DELAY = int(os.getenv("BROADCAST_RETRY_DELAY", "3"))
+BROADCAST_MAX_RETRIES = int(os.getenv("BROADCAST_MAX_RETRIES", "2"))
 
 START_PHOTO_URL = "https://files.catbox.moe/j24fx2.jpg"
 AD_PHOTO_URL = "https://files.catbox.moe/pkztzh.jpg"
@@ -331,6 +336,7 @@ def admin_panel():
         [InlineKeyboardButton("➖ Enlever mot interdit", callback_data="admin:remove_word")],
         [InlineKeyboardButton("📋 Voir mots interdits", callback_data="admin:list_words")],
         [InlineKeyboardButton("📣 Broadcast groupe", callback_data="admin:broadcast")],
+        [InlineKeyboardButton("📨 Broadcast utilisateurs", callback_data="admin:broadcast_users")],
     ])
 
 
@@ -538,6 +544,7 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "banned": "Utilisateurs bannis",
                 "refused": "Accès refusés",
                 "broadcasts": "Broadcasts envoyés",
+                "broadcast_users": "Broadcasts utilisateurs",
                 "restricted": "Utilisateurs restreints",
                 "join_leave_deleted": "Messages arrivée/sortie supprimés",
             }
@@ -605,6 +612,13 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if action == "broadcast":
             context.user_data["mode"] = "broadcast"
             await q.message.reply_text("Envoie le message à broadcaster dans le groupe principal. /cancel pour annuler.")
+            return
+
+        if action == "broadcast_users":
+            context.user_data["mode"] = "broadcast_users"
+            await q.message.reply_text(
+                "Envoie le message à envoyer à tous les utilisateurs du bot.\n/cancel pour annuler."
+            )
             return
 
     row = get_user(user_id)
@@ -871,6 +885,73 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 con.commit()
 
         await message.reply_text("Broadcast envoyé dans le groupe principal.")
+        return
+
+    if is_admin(user.id) and context.user_data.get("mode") == "broadcast_users":
+        context.user_data.clear()
+
+        with db() as con:
+            with con.cursor() as cur:
+                cur.execute("SELECT user_id FROM bot_users ORDER BY user_id")
+                users = cur.fetchall()
+
+        total = len(users)
+        sent = 0
+        failed = 0
+        blocked = 0
+        retried = 0
+
+        await message.reply_text(
+            f"📨 Broadcast utilisateurs lancé.\n\n"
+            f"👥 Utilisateurs ciblés : {total}\n"
+            f"⏳ Envoi sécurisé en cours..."
+        )
+
+        for row in users:
+            target_id = row["user_id"]
+
+            for attempt in range(BROADCAST_MAX_RETRIES + 1):
+                try:
+                    await context.bot.send_message(target_id, text)
+                    sent += 1
+                    break
+
+                except RetryAfter as e:
+                    retried += 1
+                    await asyncio.sleep(e.retry_after + 1)
+
+                except Forbidden:
+                    blocked += 1
+                    failed += 1
+                    break
+
+                except TelegramError as e:
+                    logger.warning("Erreur broadcast utilisateur %s : %s", target_id, e)
+
+                    if attempt < BROADCAST_MAX_RETRIES:
+                        retried += 1
+                        await asyncio.sleep(BROADCAST_RETRY_DELAY)
+                    else:
+                        failed += 1
+                        break
+
+                except Exception as e:
+                    logger.warning("Erreur inconnue broadcast utilisateur %s : %s", target_id, e)
+                    failed += 1
+                    break
+
+            await asyncio.sleep(BROADCAST_USER_DELAY)
+
+        inc("broadcast_users")
+
+        await message.reply_text(
+            f"📨 Broadcast utilisateurs terminé\n\n"
+            f"👥 Ciblés : {total}\n"
+            f"✅ Envoyés : {sent}\n"
+            f"🚫 Bloqués : {blocked}\n"
+            f"🔁 Retry : {retried}\n"
+            f"❌ Échecs : {failed}"
+        )
         return
 
     if is_admin(user.id) and context.user_data.get("mode") == "refuse_reason":
