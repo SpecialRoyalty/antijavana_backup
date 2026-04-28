@@ -1,4 +1,4 @@
-fimport os
+import os
 import logging
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -45,18 +45,18 @@ SHARE_AD_PHOTO_URL = "https://files.catbox.moe/7sw1q5.jpg"
 
 START_TEXT = """👋 Bienvenue
 
-Tu souhaites rejoindre un groupe vraiment exclusif ? Tu es au bon endroit.
+Tu es sur le point de demander l’accès à un groupe privé très sélectif.
 
-🔐 Ici, l’entrée est sélective :
-- Chaque membre possède de véritables contenus exclusifs
-- Les contenus déjà vus ou trop partagés ne sont pas acceptés
+Ici, on accepte uniquement les personnes capables d’apporter de la vraie valeur :
+- contenu exclusif
+- médias rares
+- participation sérieuse
+- aucun contenu recyclé ou déjà vu partout
 
-Que tu sois créateur ou acheteur régulier de contenu privé, tu rejoindras une communauté de personnes comme toi.
+⚠️ Les places sont limitées.
+Chaque demande est vérifiée avant validation.
 
-🤖 Processus 100% automatisé  
-⚠️ Important : aucun support disponible
-
-👇 Commence maintenant . BY ANTIJAVANA GROUPE"""
+Choisis ton profil :"""
 
 AD_TEXT = """🔐 Rejoins un groupe vraiment exclusif
 
@@ -97,28 +97,6 @@ Partage le groupe à tes contacts ou dans tes meilleurs groupes Telegram.
 WAITLIST_TEXT = "Vous êtes sur la liste d’attente."
 UNDER_REVIEW_TEXT = "Votre demande est en cours d’analyse."
 BANNED_TEXT = "L’accès au groupe ne vous sera pas attribué."
-
-INTERNATIONAL_REFUSED_TEXT = """Désolé, pour le moment nous ne pouvons pas donner accès aux profils internationaux.
-
-Le groupe est actuellement réservé aux profils francophones uniquement."""
-
-NO_CONTENT_REFUSED_TEXT = """Désolé, ce groupe est réservé aux personnes capables d’apporter du contenu rare ou une vraie contribution.
-
-Pour le moment, ton profil ne correspond pas aux critères d’entrée."""
-
-EXCHANGED_CONTENT_REFUSED_TEXT = """Désolé, ce groupe est réservé aux personnes ayant du contenu réellement exclusif.
-
-Les médias obtenus par échange sont souvent déjà diffusés ailleurs, donc ils ne permettent pas l’accès au groupe.
-
-Ta demande n’est pas acceptée pour le moment."""
-
-ASK_MEDIA_TEXT = """Parfait.
-
-Pour vérifier que le contenu est réellement exclusif, envoie maintenant un média de ton choix.
-
-Photo, vidéo ou document accepté.
-
-⚠️ Seuls les contenus très rares, très peu diffusés ou jamais vus ailleurs sont acceptés."""
 
 GROUP_RULES_TEXT = """Règles du groupe :
 - Envoyer directement son contenu avant de faire des demandes
@@ -654,7 +632,11 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         set_user(user_id, status=WAITING, lang="international")
         inc("waitlist")
         await delayed_user_reply()
-        await safe_callback_text(q, INTERNATIONAL_REFUSED_TEXT)
+        await safe_callback_text(
+            q,
+            "Désolé, pour le moment nous ne pouvons pas donner accès aux profils internationaux.\n\n"
+            "Le groupe est actuellement réservé aux profils francophones uniquement."
+        )
         return
 
     if data == "user:fr":
@@ -662,7 +644,8 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await delayed_user_reply()
         await safe_callback_text(
             q,
-            "Pour protéger la qualité du groupe, seuls les membres capables d’apporter de la valeur sont acceptés.\n\nQuelle situation correspond à ton profil ?",
+            "Pour protéger la qualité du groupe, seuls les membres capables d’apporter de la valeur sont acceptés.\n\n"
+            "Quelle situation correspond à ton profil ?",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ Je possède du contenu exclusif", callback_data="user:has_content")],
                 [InlineKeyboardButton("🤝 Je ne possède pas de contenu exclusif mais je peux contribuer", callback_data="user:no_content")],
@@ -674,7 +657,11 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         set_user(user_id, status=WAITING, has_content=0)
         inc("waitlist")
         await delayed_user_reply()
-        await safe_callback_text(q, NO_CONTENT_REFUSED_TEXT)
+        await safe_callback_text(
+            q,
+            "Désolé, ce groupe est réservé aux personnes capables d’apporter du contenu rare ou une vraie contribution.\n\n"
+            "Pour le moment, ton profil ne correspond pas aux critères d’entrée."
+        )
         return
 
     if data == "user:has_content":
@@ -691,13 +678,15 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "user:type_known":
-        set_user(
-            user_id,
-            status=PENDING_MEDIA,
-            content_type="known"
-        )
+        set_user(user_id, status=PENDING_MEDIA, content_type="known")
         await delayed_user_reply()
-        await safe_callback_text(q, ASK_MEDIA_TEXT)
+        await safe_callback_text(
+            q,
+            "Parfait.\n\n"
+            "Pour vérifier que le contenu est réellement exclusif, envoie maintenant un média de ton choix.\n\n"
+            "Photo, vidéo ou document accepté.\n\n"
+            "⚠️ Les contenus déjà vus partout ou trop partagés ne sont pas acceptés."
+        )
         return
 
     if data == "user:type_ama":
@@ -707,31 +696,34 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             q,
             "Ce contenu amateur vient d’où ?",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ C’est un média que j’ai obtenu moi-même", callback_data="user:ama_own")],
+                [InlineKeyboardButton("✅ C’est un média que j’ai obtenu moi-même", callback_data="user:ama_self")],
                 [InlineKeyboardButton("🔁 C’est un média que j’ai échangé", callback_data="user:ama_trade")],
             ])
         )
         return
 
-    if data == "user:ama_own":
-        set_user(
-            user_id,
-            status=PENDING_MEDIA,
-            content_type="ama_own"
-        )
-        await delayed_user_reply()
-        await safe_callback_text(q, ASK_MEDIA_TEXT)
-        return
-
     if data == "user:ama_trade":
-        set_user(
-            user_id,
-            status=WAITING,
-            content_type="ama_trade"
-        )
+        set_user(user_id, status=WAITING, content_type="ama_trade")
         inc("waitlist")
         await delayed_user_reply()
-        await safe_callback_text(q, EXCHANGED_CONTENT_REFUSED_TEXT)
+        await safe_callback_text(
+            q,
+            "Désolé, ce groupe est réservé aux personnes ayant du contenu réellement exclusif.\n\n"
+            "Les médias obtenus par échange sont souvent déjà diffusés ailleurs, donc ils ne permettent pas l’accès au groupe.\n\n"
+            "Ta demande n’est pas acceptée pour le moment."
+        )
+        return
+
+    if data == "user:ama_self":
+        set_user(user_id, status=PENDING_MEDIA, content_type="ama_self")
+        await delayed_user_reply()
+        await safe_callback_text(
+            q,
+            "Parfait.\n\n"
+            "Envoie maintenant un média de ton choix pour vérification.\n\n"
+            "Photo, vidéo ou document accepté.\n\n"
+            "⚠️ Seuls les contenus très rares, très peu diffusés ou jamais vus ailleurs sont acceptés."
+        )
         return
 
 
