@@ -1,4 +1,4 @@
-import os
+fimport os
 import logging
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -97,6 +97,28 @@ Partage le groupe à tes contacts ou dans tes meilleurs groupes Telegram.
 WAITLIST_TEXT = "Vous êtes sur la liste d’attente."
 UNDER_REVIEW_TEXT = "Votre demande est en cours d’analyse."
 BANNED_TEXT = "L’accès au groupe ne vous sera pas attribué."
+
+INTERNATIONAL_REFUSED_TEXT = """Désolé, pour le moment nous ne pouvons pas donner accès aux profils internationaux.
+
+Le groupe est actuellement réservé aux profils francophones uniquement."""
+
+NO_CONTENT_REFUSED_TEXT = """Désolé, ce groupe est réservé aux personnes capables d’apporter du contenu rare ou une vraie contribution.
+
+Pour le moment, ton profil ne correspond pas aux critères d’entrée."""
+
+EXCHANGED_CONTENT_REFUSED_TEXT = """Désolé, ce groupe est réservé aux personnes ayant du contenu réellement exclusif.
+
+Les médias obtenus par échange sont souvent déjà diffusés ailleurs, donc ils ne permettent pas l’accès au groupe.
+
+Ta demande n’est pas acceptée pour le moment."""
+
+ASK_MEDIA_TEXT = """Parfait.
+
+Pour vérifier que le contenu est réellement exclusif, envoie maintenant un média de ton choix.
+
+Photo, vidéo ou document accepté.
+
+⚠️ Seuls les contenus très rares, très peu diffusés ou jamais vus ailleurs sont acceptés."""
 
 GROUP_RULES_TEXT = """Règles du groupe :
 - Envoyer directement son contenu avant de faire des demandes
@@ -632,7 +654,7 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         set_user(user_id, status=WAITING, lang="international")
         inc("waitlist")
         await delayed_user_reply()
-        await safe_callback_text(q, WAITLIST_TEXT)
+        await safe_callback_text(q, INTERNATIONAL_REFUSED_TEXT)
         return
 
     if data == "user:fr":
@@ -640,7 +662,7 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await delayed_user_reply()
         await safe_callback_text(
             q,
-            "Choisissez une option :",
+            "Pour protéger la qualité du groupe, seuls les membres capables d’apporter de la valeur sont acceptés.\n\nQuelle situation correspond à ton profil ?",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ Je possède du contenu exclusif", callback_data="user:has_content")],
                 [InlineKeyboardButton("🤝 Je ne possède pas de contenu exclusif mais je peux contribuer", callback_data="user:no_content")],
@@ -652,7 +674,7 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         set_user(user_id, status=WAITING, has_content=0)
         inc("waitlist")
         await delayed_user_reply()
-        await safe_callback_text(q, WAITLIST_TEXT)
+        await safe_callback_text(q, NO_CONTENT_REFUSED_TEXT)
         return
 
     if data == "user:has_content":
@@ -660,26 +682,56 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await delayed_user_reply()
         await safe_callback_text(
             q,
-            "Quel type de contenu possédez-vous ?",
+            "Très bien.\n\nQuel type de contenu possèdes-tu ?",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("Contenu autorisé sur créatrice MYM/Onlyfans FR Exclusif", callback_data="user:type_known")],
-                [InlineKeyboardButton("Contenu exclusif Amateur qui a peu/pas tourné", callback_data="user:type_ama")],
+                [InlineKeyboardButton("🔐 Contenu MYM / OnlyFans FR exclusif", callback_data="user:type_known")],
+                [InlineKeyboardButton("🎥 Contenu amateur exclusif", callback_data="user:type_ama")],
             ])
         )
         return
 
-    if data in ("user:type_known", "user:type_ama"):
+    if data == "user:type_known":
         set_user(
             user_id,
             status=PENDING_MEDIA,
-            content_type=data.replace("user:type_", "")
+            content_type="known"
         )
+        await delayed_user_reply()
+        await safe_callback_text(q, ASK_MEDIA_TEXT)
+        return
+
+    if data == "user:type_ama":
+        set_user(user_id, content_type="ama")
         await delayed_user_reply()
         await safe_callback_text(
             q,
-            "Ce n’est pas qu’on ne te croit pas, mais envoie un média de ton choix.\n\n"
-            "Je l'analyserais afin de vérifier qu’il n’a pas été diffusé sur des groupes Telegram ou présent sur des plateformes de leaks."
+            "Ce contenu amateur vient d’où ?",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ C’est un média que j’ai obtenu moi-même", callback_data="user:ama_own")],
+                [InlineKeyboardButton("🔁 C’est un média que j’ai échangé", callback_data="user:ama_trade")],
+            ])
         )
+        return
+
+    if data == "user:ama_own":
+        set_user(
+            user_id,
+            status=PENDING_MEDIA,
+            content_type="ama_own"
+        )
+        await delayed_user_reply()
+        await safe_callback_text(q, ASK_MEDIA_TEXT)
+        return
+
+    if data == "user:ama_trade":
+        set_user(
+            user_id,
+            status=WAITING,
+            content_type="ama_trade"
+        )
+        inc("waitlist")
+        await delayed_user_reply()
+        await safe_callback_text(q, EXCHANGED_CONTENT_REFUSED_TEXT)
         return
 
 
