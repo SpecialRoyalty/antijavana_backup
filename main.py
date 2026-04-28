@@ -43,20 +43,25 @@ START_PHOTO_URL = "https://files.catbox.moe/j24fx2.jpg"
 AD_PHOTO_URL = "https://files.catbox.moe/pkztzh.jpg"
 SHARE_AD_PHOTO_URL = "https://files.catbox.moe/7sw1q5.jpg"
 
-START_TEXT = """👋 Bienvenue
+START_TEXT = """
 
-Tu es sur le point de demander l’accès à un groupe privé très sélectif.
+🚪 Accès à un cercle privé
 
-Ici, on accepte uniquement les personnes capables d’apporter de la vraie valeur :
-- contenu exclusif
-- médias rares
-- participation sérieuse
-- aucun contenu recyclé ou déjà vu partout
+Tu es sur le point de rejoindre un groupe sélectif et confidentiel.
 
-⚠️ Les places sont limitées.
-Chaque demande est vérifiée avant validation.
+Ici, on ne cherche pas du contenu banal.  
+On veut de la qualité, de la rareté, et de l’engagement réel :
 
-Choisis ton profil :"""
+✨ Contenu exclusif (médias rares, introuvables ailleurs)  
+🔥 Participation active et sérieuse  
+🚫 Zéro recyclage, zéro déjà-vu  
+
+⚠️ Attention : les places sont très limitées.  
+Chaque candidature est examinée avec soin avant validation.
+
+👉 À toi de jouer. Choisis ton profil :
+
+"""
 
 AD_TEXT = """🔐 Rejoins un groupe vraiment exclusif
 
@@ -635,7 +640,7 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_callback_text(
             q,
             "Désolé, pour le moment nous ne pouvons pas donner accès aux profils internationaux.\n\n"
-            "Le groupe est actuellement réservé aux profils francophones uniquement."
+            "Le groupe est actuellement réservé aux profils FR Francais uniquement."
         )
         return
 
@@ -644,7 +649,7 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await delayed_user_reply()
         await safe_callback_text(
             q,
-            "Pour protéger la qualité du groupe, seuls les membres capables d’apporter de la valeur sont acceptés.\n\n"
+            "Pour protéger la qualité du groupe, seuls les membres capables d’apporter une réelle valeur sont acceptés, sauf exception....\n\n"
             "Quelle situation correspond à ton profil ?",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ Je possède du contenu exclusif", callback_data="user:has_content")],
@@ -683,9 +688,10 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_callback_text(
             q,
             "Parfait.\n\n"
-            "Pour vérifier que le contenu est réellement exclusif, envoie maintenant un média de ton choix.\n\n"
+            "Pour vérifier que le contenu est réellement exclusif, envoie maintenant UN et UN SEUL média de ton choix.\n\n"
             "Photo, vidéo ou document accepté.\n\n"
-            "⚠️ Les contenus déjà vus partout ou trop partagés ne sont pas acceptés."
+            "⚠️ Attention : la vérification ne fonctionnera que si ce média t’appartient, que tu l’as acheté directement auprès de la créatrice et que tu ne l’as pas diffusé.."
+            "⚠️ Toute fausse déclaration entraînera un bannissement définitif du groupe et du bot."
         )
         return
 
@@ -694,7 +700,7 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await delayed_user_reply()
         await safe_callback_text(
             q,
-            "Ce contenu amateur vient d’où ?",
+            "Un média exclusif est un contenu que vous avez vous-même filmé et très peu, voire jamais partagé, ou un média obtenu sans qu’il circule sur Internet.\n\nComment avez-vous obtenu les vôtres ?",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ C’est un média que j’ai obtenu moi-même", callback_data="user:ama_self")],
                 [InlineKeyboardButton("🔁 C’est un média que j’ai échangé", callback_data="user:ama_trade")],
@@ -720,9 +726,10 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_callback_text(
             q,
             "Parfait.\n\n"
-            "Envoie maintenant un média de ton choix pour vérification.\n\n"
+            "Envoie maintenant UN et UN SEUL média de ton choix pour vérification.\n\n"
             "Photo, vidéo ou document accepté.\n\n"
             "⚠️ Seuls les contenus très rares, très peu diffusés ou jamais vus ailleurs sont acceptés."
+            "⚠️ ⚠️ Toute fausse déclaration entraînera un bannissement définitif du groupe et du bot."
         )
         return
 
