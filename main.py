@@ -34,7 +34,6 @@ ADMIN_IDS = {
 
 USER_REPLY_DELAY = 1
 
-# Broadcast utilisateurs safe
 BROADCAST_USER_DELAY = float(os.getenv("BROADCAST_USER_DELAY", "0.15"))
 BROADCAST_RETRY_DELAY = int(os.getenv("BROADCAST_RETRY_DELAY", "3"))
 BROADCAST_MAX_RETRIES = int(os.getenv("BROADCAST_MAX_RETRIES", "2"))
@@ -44,7 +43,6 @@ AD_PHOTO_URL = "https://files.catbox.moe/pkztzh.jpg"
 SHARE_AD_PHOTO_URL = "https://files.catbox.moe/7sw1q5.jpg"
 
 START_TEXT = """
-
 🚪 Accès à un cercle privé
 
 Tu es sur le point de rejoindre un groupe sélectif et confidentiel.
@@ -52,29 +50,28 @@ Tu es sur le point de rejoindre un groupe sélectif et confidentiel.
 Ici, on ne cherche pas du contenu banal.  
 On veut de la qualité, de la rareté, et de l’engagement réel :
 
-✨ Contenu exclusif (médias rares, introuvables ailleurs)  
-🔥 Participation active et sérieuse  
-🚫 Zéro recyclage, zéro déjà-vu  
+✨ Contenu exclusif
+🔥 Participation active et sérieuse
+🚫 Zéro recyclage, zéro déjà-vu
 
 ⚠️ Attention : les places sont très limitées.  
 Chaque candidature est examinée avec soin avant validation.
 
 👉 À toi de jouer. Choisis ton profil :
-
 """
 
 AD_TEXT = """🔐 Rejoins un groupe vraiment exclusif
 
-Marre de ceux qui demande sans poster ?
+Marre de ceux qui demandent sans poster ?
 Marre de voir toujours les mêmes contenus ?
 
 👉 Ici, seuls les vrais apportent de la valeur.
 
-Accès réservé à ceux qui ont de vraies exclusivités ou qui investissent régulièrement (MYM / OnlyFans) ou en produisent eux-mêmes.
+Accès réservé à ceux qui ont de vraies exclusivités ou qui investissent régulièrement dans du contenu privé.
 
-✔ Échange 100% exclusif  
-✔ Aucun média qui a déjà tourné  
-✔ Communauté active et qualitative  
+✔ Échange 100% exclusif
+✔ Aucun média qui a déjà tourné
+✔ Communauté active et qualitative
 
 ⚠️ 200 places maximum
 
@@ -111,6 +108,7 @@ GROUP_RULES_TEXT = """Règles du groupe :
 """
 
 WAITING = "waiting"
+SOFT_REJECT = "soft_reject"
 PENDING_MEDIA = "pending_media"
 UNDER_REVIEW = "under_review"
 APPROVED = "approved"
@@ -183,14 +181,6 @@ def init_db():
 
             con.commit()
 
-            cur.execute("""
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = 'public'
-            ORDER BY table_name
-            """)
-            logger.info("Tables DB : %s", [r["table_name"] for r in cur.fetchall()])
-
 
 def inc(key: str, n: int = 1):
     with db() as con:
@@ -223,11 +213,7 @@ def set_user(user_id: int, **fields):
                 fields["updated_at"] = now_iso()
                 columns = ", ".join([f"{k} = %s" for k in fields])
                 values = list(fields.values()) + [user_id]
-
-                cur.execute(
-                    f"UPDATE bot_users SET {columns} WHERE user_id = %s",
-                    values
-                )
+                cur.execute(f"UPDATE bot_users SET {columns} WHERE user_id = %s", values)
 
             con.commit()
 
@@ -266,18 +252,13 @@ async def get_bot_username(context: ContextTypes.DEFAULT_TYPE) -> str:
     if "bot_username" not in context.application.bot_data:
         me = await context.bot.get_me()
         context.application.bot_data["bot_username"] = me.username
-
     return context.application.bot_data["bot_username"]
 
 
 async def safe_reply_photo(message, photo_url: str, caption: str, reply_markup=None):
     if photo_url and photo_url.startswith("http"):
         try:
-            return await message.reply_photo(
-                photo=photo_url,
-                caption=caption,
-                reply_markup=reply_markup,
-            )
+            return await message.reply_photo(photo=photo_url, caption=caption, reply_markup=reply_markup)
         except BadRequest:
             logger.warning("Image invalide : %s", photo_url)
 
@@ -308,11 +289,7 @@ async def safe_send_photo_or_text(context, chat_id: int, photo_url: str, caption
 
 async def safe_send_message(context, chat_id: int, text: str, reply_markup=None):
     try:
-        return await context.bot.send_message(
-            chat_id=chat_id,
-            text=text,
-            reply_markup=reply_markup,
-        )
+        return await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
     except Forbidden:
         logger.warning("Impossible d’envoyer un message à %s", chat_id)
     except TelegramError as e:
@@ -334,8 +311,8 @@ def share_button():
 def admin_panel():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("⚙️ Vérifier configuration", callback_data="admin:check_config")],
-        [InlineKeyboardButton("📢 Publier dans groupe sécondaire", callback_data="admin:show_ad")],
-        [InlineKeyboardButton("🖼 Publier dans groupe principale", callback_data="admin:share_ad")],
+        [InlineKeyboardButton("📢 Publier dans groupe secondaire", callback_data="admin:show_ad")],
+        [InlineKeyboardButton("🖼 Publier dans groupe principal", callback_data="admin:share_ad")],
         [InlineKeyboardButton("📊 Statistiques", callback_data="admin:stats")],
         [InlineKeyboardButton("➕ Ajouter mot interdit", callback_data="admin:add_word")],
         [InlineKeyboardButton("➖ Enlever mot interdit", callback_data="admin:remove_word")],
@@ -359,12 +336,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_text("Panel administrateur :", reply_markup=admin_panel())
         return
 
-    if row and row["status"] in (WAITING, UNDER_REVIEW, APPROVED, BANNED):
+    if row and row["status"] in (UNDER_REVIEW, APPROVED, BANNED):
         await delayed_user_reply()
 
-        if row["status"] == WAITING:
-            await message.reply_text(WAITLIST_TEXT)
-        elif row["status"] == UNDER_REVIEW:
+        if row["status"] == UNDER_REVIEW:
             await message.reply_text(UNDER_REVIEW_TEXT)
         elif row["status"] == APPROVED:
             await message.reply_text("✅ Vous êtes déjà admis.")
@@ -414,7 +389,6 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if action == "check_config":
             lines = ["⚙️ Vérification configuration\n"]
-
             lines.append("✅ BOT_TOKEN présent" if BOT_TOKEN else "❌ BOT_TOKEN manquant")
             lines.append("✅ DATABASE_URL présent" if DATABASE_URL else "❌ DATABASE_URL manquant")
             lines.append(f"✅ Admins configurés : {len(ADMIN_IDS)}" if ADMIN_IDS else "❌ ADMIN_IDS manquant")
@@ -435,44 +409,32 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 lines.append(f"❌ Erreur DB : {e}")
 
-            if MAIN_GROUP_ID:
-                try:
-                    chat = await context.bot.get_chat(MAIN_GROUP_ID)
-                    bot_member = await context.bot.get_chat_member(MAIN_GROUP_ID, context.bot.id)
+            for group_id, label in [
+                (MAIN_GROUP_ID, "principal"),
+                (SECONDARY_GROUP_ID, "secondaire"),
+            ]:
+                if group_id:
+                    try:
+                        chat = await context.bot.get_chat(group_id)
+                        bot_member = await context.bot.get_chat_member(group_id, context.bot.id)
+                        lines.append(f"✅ Groupe {label} trouvé : {chat.title}")
 
-                    lines.append(f"✅ Groupe principal trouvé : {chat.title}")
+                        if bot_member.status in ("administrator", "creator"):
+                            lines.append(f"✅ Bot admin dans le groupe {label}")
+                        else:
+                            lines.append(f"⚠️ Bot présent mais pas admin dans le groupe {label}")
 
-                    if bot_member.status in ("administrator", "creator"):
-                        lines.append("✅ Bot admin dans le groupe principal")
-                    else:
-                        lines.append("❌ Bot présent mais pas admin dans le groupe principal")
+                        if label == "principal":
+                            lines.append("✅ Droit suppression messages OK" if getattr(bot_member, "can_delete_messages", False) else "⚠️ Droit suppression messages manquant")
+                            lines.append("✅ Droit invitation utilisateurs OK" if getattr(bot_member, "can_invite_users", False) else "⚠️ Droit invitation utilisateurs manquant")
 
-                    lines.append("✅ Droit suppression messages OK" if getattr(bot_member, "can_delete_messages", False) else "⚠️ Droit suppression messages manquant")
-                    lines.append("✅ Droit invitation utilisateurs OK" if getattr(bot_member, "can_invite_users", False) else "⚠️ Droit invitation utilisateurs manquant")
-
-                except Exception as e:
-                    lines.append("❌ Impossible d’accéder au groupe principal")
-                    lines.append(f"Détail : {e}")
-
-            if SECONDARY_GROUP_ID:
-                try:
-                    chat = await context.bot.get_chat(SECONDARY_GROUP_ID)
-                    bot_member = await context.bot.get_chat_member(SECONDARY_GROUP_ID, context.bot.id)
-
-                    lines.append(f"✅ Groupe secondaire trouvé : {chat.title}")
-
-                    if bot_member.status in ("administrator", "creator"):
-                        lines.append("✅ Bot admin dans le groupe secondaire")
-                    else:
-                        lines.append("⚠️ Bot présent dans le groupe secondaire mais pas admin")
-
-                except Exception as e:
-                    lines.append("❌ Impossible d’accéder au groupe secondaire")
-                    lines.append(f"Détail : {e}")
+                    except Exception as e:
+                        lines.append(f"❌ Impossible d’accéder au groupe {label}")
+                        lines.append(f"Détail : {e}")
 
             lines.append("")
-            lines.append("ℹ️ Afficher la pub → groupe secondaire")
-            lines.append("ℹ️ Publicité → groupe principal")
+            lines.append("ℹ️ Publier dans groupe secondaire → groupe secondaire")
+            lines.append("ℹ️ Publier dans groupe principal → groupe principal")
 
             await q.message.reply_text("\n".join(lines))
             return
@@ -485,26 +447,16 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bot_username = await get_bot_username(context)
 
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton(
-                    "🔐 Je rejoins le groupe exclusif",
-                    url=f"https://t.me/{bot_username}?start=join"
-                )],
+                [InlineKeyboardButton("🔐 Je rejoins le groupe exclusif", url=f"https://t.me/{bot_username}?start=join")],
                 [share_button()],
             ])
 
             try:
-                await safe_send_photo_or_text(
-                    context,
-                    SECONDARY_GROUP_ID,
-                    AD_PHOTO_URL,
-                    AD_TEXT,
-                    keyboard
-                )
+                await safe_send_photo_or_text(context, SECONDARY_GROUP_ID, AD_PHOTO_URL, AD_TEXT, keyboard)
                 inc("ads_shown")
                 await q.message.reply_text("✅ Publicité envoyée dans le groupe secondaire.")
             except TelegramError as e:
                 await q.message.reply_text(f"❌ Impossible d’envoyer dans le groupe secondaire : {e}")
-
             return
 
         if action == "share_ad":
@@ -515,24 +467,18 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard = InlineKeyboardMarkup([[share_button()]])
 
             try:
-                await safe_send_photo_or_text(
-                    context,
-                    MAIN_GROUP_ID,
-                    SHARE_AD_PHOTO_URL,
-                    SHARE_PANEL_TEXT,
-                    keyboard
-                )
+                await safe_send_photo_or_text(context, MAIN_GROUP_ID, SHARE_AD_PHOTO_URL, SHARE_PANEL_TEXT, keyboard)
                 inc("share_panels_shown")
                 await q.message.reply_text("✅ Panneau publicité envoyé dans le groupe principal.")
             except TelegramError as e:
                 await q.message.reply_text(f"❌ Impossible d’envoyer dans le groupe principal : {e}")
-
             return
 
         if action == "stats":
             status_fr = {
                 "new": "Nouveaux",
                 "waiting": "Liste d’attente",
+                "soft_reject": "Refus temporaires",
                 "pending_media": "Média attendu",
                 "under_review": "En analyse",
                 "approved": "Acceptés",
@@ -548,7 +494,7 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "approved": "Accès donnés",
                 "banned": "Utilisateurs bannis",
                 "refused": "Accès refusés",
-                "broadcasts": "Broadcasts envoyés",
+                "broadcasts": "Broadcasts groupe",
                 "broadcast_users": "Broadcasts utilisateurs",
                 "restricted": "Utilisateurs restreints",
                 "join_leave_deleted": "Messages arrivée/sortie supprimés",
@@ -571,13 +517,11 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             lines = ["📊 Statistiques\n", "Utilisateurs :"]
             for r in users:
-                label = status_fr.get(r["status"], r["status"])
-                lines.append(f"- {label} : {r['c']}")
+                lines.append(f"- {status_fr.get(r['status'], r['status'])} : {r['c']}")
 
             lines.append("\nActions :")
             for s in stats:
-                label = stats_fr.get(s["key"], s["key"])
-                lines.append(f"- {label} : {s['value']}")
+                lines.append(f"- {stats_fr.get(s['key'], s['key'])} : {s['value']}")
 
             lines.append(f"\nMots interdits actifs : {words}")
 
@@ -621,26 +565,25 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if action == "broadcast_users":
             context.user_data["mode"] = "broadcast_users"
-            await q.message.reply_text(
-                "Envoie le message à envoyer à tous les utilisateurs du bot.\n/cancel pour annuler."
-            )
+            await q.message.reply_text("Envoie le message à envoyer à tous les utilisateurs du bot.\n/cancel pour annuler.")
             return
 
     row = get_user(user_id)
 
-    if row and row["status"] in (WAITING, UNDER_REVIEW, BANNED, APPROVED):
+    if row and row["status"] in (UNDER_REVIEW, BANNED, APPROVED):
         await delayed_user_reply()
         await q.message.reply_text("Votre statut actuel ne permet pas de recommencer.")
         return
 
     if data == "user:intl":
-        set_user(user_id, status=WAITING, lang="international")
+        set_user(user_id, status=SOFT_REJECT, lang="international")
         inc("waitlist")
         await delayed_user_reply()
         await safe_callback_text(
             q,
             "Désolé, pour le moment nous ne pouvons pas donner accès aux profils internationaux.\n\n"
-            "Le groupe est actuellement réservé aux profils FR Francais uniquement."
+            "Le groupe est actuellement réservé aux profils FR francophones.\n\n"
+            "👉 Tu pourras retenter ta chance plus tard si ton profil évolue."
         )
         return
 
@@ -649,7 +592,7 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await delayed_user_reply()
         await safe_callback_text(
             q,
-            "Pour protéger la qualité du groupe, seuls les membres capables d’apporter une réelle valeur sont acceptés, sauf exception....\n\n"
+            "Pour protéger la qualité du groupe, seuls les membres capables d’apporter une réelle valeur sont acceptés, sauf exception.\n\n"
             "Quelle situation correspond à ton profil ?",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ Je possède du contenu exclusif", callback_data="user:has_content")],
@@ -659,13 +602,13 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "user:no_content":
-        set_user(user_id, status=WAITING, has_content=0)
+        set_user(user_id, status=SOFT_REJECT, has_content=0)
         inc("waitlist")
         await delayed_user_reply()
         await safe_callback_text(
             q,
-            "Désolé, ce groupe est réservé aux personnes capables d’apporter du contenu rare ou une vraie contribution.\n\n"
-            "Pour le moment, ton profil ne correspond pas aux critères d’entrée."
+            "Actuellement, l’accès est réservé aux profils apportant du contenu exclusif ou une forte valeur.\n\n"
+            "👉 Tu pourras retenter ta chance plus tard si ton profil évolue."
         )
         return
 
@@ -690,7 +633,6 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Parfait.\n\n"
             "Pour vérifier que le contenu est réellement exclusif, envoie maintenant UN et UN SEUL média de ton choix.\n\n"
             "Photo, vidéo ou document accepté.\n\n"
-            "⚠️ Attention : la vérification ne fonctionnera que si ce média t’appartient, que tu l’as acheté directement auprès de la créatrice et que tu ne l’as pas diffusé.."
             "⚠️ Toute fausse déclaration entraînera un bannissement définitif du groupe et du bot."
         )
         return
@@ -700,7 +642,8 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await delayed_user_reply()
         await safe_callback_text(
             q,
-            "Un média exclusif est un contenu que vous avez vous-même filmé et très peu, voire jamais partagé, ou un média obtenu sans qu’il circule sur Internet.\n\nComment avez-vous obtenu les vôtres ?",
+            "Un média exclusif est un contenu que vous avez vous-même filmé et très peu, voire jamais partagé, ou un média obtenu sans qu’il circule sur Internet.\n\n"
+            "Comment avez-vous obtenu les vôtres ?",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ C’est un média que j’ai obtenu moi-même", callback_data="user:ama_self")],
                 [InlineKeyboardButton("🔁 C’est un média que j’ai échangé", callback_data="user:ama_trade")],
@@ -709,14 +652,14 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "user:ama_trade":
-        set_user(user_id, status=WAITING, content_type="ama_trade")
+        set_user(user_id, status=SOFT_REJECT, content_type="ama_trade")
         inc("waitlist")
         await delayed_user_reply()
         await safe_callback_text(
             q,
-            "Désolé, ce groupe est réservé aux personnes ayant du contenu réellement exclusif.\n\n"
-            "Les médias obtenus par échange sont souvent déjà diffusés ailleurs, donc ils ne permettent pas l’accès au groupe.\n\n"
-            "Ta demande n’est pas acceptée pour le moment."
+            "Les médias obtenus par échange sont souvent déjà diffusés ailleurs.\n\n"
+            "Pour protéger la qualité du groupe, nous acceptons uniquement les contenus réellement rares ou obtenus directement.\n\n"
+            "👉 Tu pourras retenter ta chance plus tard si ton profil évolue."
         )
         return
 
@@ -728,8 +671,8 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Parfait.\n\n"
             "Envoie maintenant UN et UN SEUL média de ton choix pour vérification.\n\n"
             "Photo, vidéo ou document accepté.\n\n"
-            "⚠️ Seuls les contenus très rares, très peu diffusés ou jamais vus ailleurs sont acceptés."
-            "⚠️ ⚠️ Toute fausse déclaration entraînera un bannissement définitif du groupe et du bot."
+            "⚠️ Seuls les contenus très rares, très peu diffusés ou jamais vus ailleurs sont acceptés.\n"
+            "⚠️ Toute fausse déclaration entraînera un bannissement définitif du groupe et du bot."
         )
         return
 
@@ -808,9 +751,6 @@ async def media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not row or row["status"] != PENDING_MEDIA:
         return
-
-    file_id = None
-    media_type = None
 
     if message.photo:
         file_id = message.photo[-1].file_id
@@ -914,7 +854,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await message.reply_text(f"Mot interdit désactivé : {word}")
         else:
             await message.reply_text(f"Mot introuvable ou déjà inactif : {word}")
-
         return
 
     if is_admin(user.id) and context.user_data.get("mode") == "broadcast":
@@ -1021,7 +960,8 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             target_id,
             "Votre accès est refusé pour la raison suivante :\n\n"
             f"{text}\n\n"
-            "Vous pouvez recommencer le formulaire avec /start.Attention, prochainement vous serez banni !"
+            "Vous pouvez recommencer le formulaire avec /start.\n\n"
+            "Attention, en cas d’abus, vous pourrez être banni."
         )
 
         await message.reply_text("Raison envoyée à l’utilisateur.")
@@ -1035,7 +975,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 FROM forbidden_words
                 WHERE group_id = %s AND is_active = true
                 """, (MAIN_GROUP_ID,))
-
                 words = [r["word"] for r in cur.fetchall()]
 
         lowered = text.lower()
