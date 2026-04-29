@@ -96,6 +96,15 @@ Partage le groupe à tes contacts ou dans tes meilleurs groupes Telegram.
 
 👇 À toi de jouer"""
 
+GROUPS_FULL_TEXT = "Tous les groupes sont actuellement pleins."
+
+CREATORS_ONLY_TEXT = """Pour ce groupe nous acceptons uniquement les personnes avec du contenu de créatrices.
+
+Mais rien n’est fini.
+
+Êtes-vous dans des groupes VIP Telegram payants ?
+Si oui, contactez @op75x15"""
+
 WAITLIST_TEXT = "Vous êtes sur la liste d’attente."
 UNDER_REVIEW_TEXT = "Votre demande est en cours d’analyse."
 BANNED_TEXT = "L’accès au groupe ne vous sera pas attribué."
@@ -114,6 +123,9 @@ UNDER_REVIEW = "under_review"
 APPROVED = "approved"
 BANNED = "banned"
 REFUSED = "refused"
+
+SETTING_GROUPS_FULL = "groups_full"
+SETTING_CREATORS_ONLY = "creators_only"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -170,6 +182,14 @@ def init_db():
             """)
 
             cur.execute("""
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL DEFAULT 'off',
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+            """)
+
+            cur.execute("""
             CREATE TABLE IF NOT EXISTS forbidden_words (
                 id SERIAL PRIMARY KEY,
                 group_id BIGINT NOT NULL,
@@ -179,7 +199,48 @@ def init_db():
             );
             """)
 
+            cur.execute("""
+            INSERT INTO bot_settings(key, value)
+            VALUES(%s, 'off')
+            ON CONFLICT (key) DO NOTHING
+            """, (SETTING_GROUPS_FULL,))
+
+            cur.execute("""
+            INSERT INTO bot_settings(key, value)
+            VALUES(%s, 'off')
+            ON CONFLICT (key) DO NOTHING
+            """, (SETTING_CREATORS_ONLY,))
+
             con.commit()
+
+
+def get_setting(key: str) -> str:
+    with db() as con:
+        with con.cursor() as cur:
+            cur.execute("SELECT value FROM bot_settings WHERE key = %s", (key,))
+            row = cur.fetchone()
+            return row["value"] if row else "off"
+
+
+def is_setting_on(key: str) -> bool:
+    return get_setting(key) == "on"
+
+
+def toggle_setting(key: str) -> str:
+    current = get_setting(key)
+    new_value = "off" if current == "on" else "on"
+
+    with db() as con:
+        with con.cursor() as cur:
+            cur.execute("""
+            INSERT INTO bot_settings(key, value, updated_at)
+            VALUES(%s, %s, NOW())
+            ON CONFLICT (key)
+            DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+            """, (key, new_value))
+            con.commit()
+
+    return new_value
 
 
 def inc(key: str, n: int = 1):
@@ -303,14 +364,23 @@ async def safe_callback_text(q, text: str, reply_markup=None):
         await q.message.reply_text(text=text, reply_markup=reply_markup)
 
 
+def on_off_label(value: str) -> str:
+    return "ON ✅" if value == "on" else "OFF ❌"
+
+
 def share_button():
     url = "https://t.me/share/url?url=&text=" + quote_plus(SHARE_TEXT)
     return InlineKeyboardButton("🔁 Je partage ce groupe", url=url)
 
 
 def admin_panel():
+    groups_full = get_setting(SETTING_GROUPS_FULL)
+    creators_only = get_setting(SETTING_CREATORS_ONLY)
+
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("⚙️ Vérifier configuration", callback_data="admin:check_config")],
+        [InlineKeyboardButton(f"🚪 Groupes pleins : {on_off_label(groups_full)}", callback_data="admin:toggle_groups_full")],
+        [InlineKeyboardButton(f"🎥 Créatrices uniquement : {on_off_label(creators_only)}", callback_data="admin:toggle_creators_only")],
         [InlineKeyboardButton("📢 Publier dans groupe secondaire", callback_data="admin:show_ad")],
         [InlineKeyboardButton("🖼 Publier dans groupe principal", callback_data="admin:share_ad")],
         [InlineKeyboardButton("📊 Statistiques", callback_data="admin:stats")],
@@ -334,6 +404,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if is_admin(user.id):
         await message.reply_text("Panel administrateur :", reply_markup=admin_panel())
+        return
+
+    if is_setting_on(SETTING_GROUPS_FULL):
+        await delayed_user_reply()
+        await message.reply_text(GROUPS_FULL_TEXT)
         return
 
     if row and row["status"] in (UNDER_REVIEW, APPROVED, BANNED):
@@ -387,6 +462,22 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         action = data.split(":", 1)[1]
 
+        if action == "toggle_groups_full":
+            new_value = toggle_setting(SETTING_GROUPS_FULL)
+            await q.message.reply_text(
+                f"🚪 Groupes pleins : {on_off_label(new_value)}",
+                reply_markup=admin_panel()
+            )
+            return
+
+        if action == "toggle_creators_only":
+            new_value = toggle_setting(SETTING_CREATORS_ONLY)
+            await q.message.reply_text(
+                f"🎥 Créatrices uniquement : {on_off_label(new_value)}",
+                reply_markup=admin_panel()
+            )
+            return
+
         if action == "check_config":
             lines = ["⚙️ Vérification configuration\n"]
             lines.append("✅ BOT_TOKEN présent" if BOT_TOKEN else "❌ BOT_TOKEN manquant")
@@ -394,6 +485,8 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(f"✅ Admins configurés : {len(ADMIN_IDS)}" if ADMIN_IDS else "❌ ADMIN_IDS manquant")
             lines.append(f"✅ MAIN_GROUP_ID présent : {MAIN_GROUP_ID}" if MAIN_GROUP_ID else "❌ MAIN_GROUP_ID manquant")
             lines.append(f"✅ SECONDARY_GROUP_ID présent : {SECONDARY_GROUP_ID}" if SECONDARY_GROUP_ID else "❌ SECONDARY_GROUP_ID manquant")
+            lines.append(f"🚪 Groupes pleins : {on_off_label(get_setting(SETTING_GROUPS_FULL))}")
+            lines.append(f"🎥 Créatrices uniquement : {on_off_label(get_setting(SETTING_CREATORS_ONLY))}")
 
             try:
                 with db() as con:
@@ -524,6 +617,8 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 lines.append(f"- {stats_fr.get(s['key'], s['key'])} : {s['value']}")
 
             lines.append(f"\nMots interdits actifs : {words}")
+            lines.append(f"🚪 Groupes pleins : {on_off_label(get_setting(SETTING_GROUPS_FULL))}")
+            lines.append(f"🎥 Créatrices uniquement : {on_off_label(get_setting(SETTING_CREATORS_ONLY))}")
 
             await q.message.reply_text("\n".join(lines))
             return
@@ -664,6 +759,13 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "user:ama_self":
+        if is_setting_on(SETTING_CREATORS_ONLY):
+            set_user(user_id, status=SOFT_REJECT, content_type="ama_self_creators_only")
+            inc("waitlist")
+            await delayed_user_reply()
+            await safe_callback_text(q, CREATORS_ONLY_TEXT)
+            return
+
         set_user(user_id, status=PENDING_MEDIA, content_type="ama_self")
         await delayed_user_reply()
         await safe_callback_text(
